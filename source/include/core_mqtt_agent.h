@@ -225,7 +225,7 @@ typedef struct MQTTAgentCommandInfo
 
 typedef struct xMQTTAgentNode
 {
-	void * pvDummy[2];
+    void * pvDummy[ 2 ];
 } MQTTAgentNode_t;
 
 /**
@@ -430,7 +430,7 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
                                   const MQTTSubscribeInfo_t * pSubscription,
                                   uint32_t timeoutMs,
                                   QueueHandle_t uxQueue,
-								  void * Node );
+                                  void * Node );
 /* @[declare_mqtt_agent_subscribe] */
 
 /**
