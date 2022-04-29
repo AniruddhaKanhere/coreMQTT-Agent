@@ -31,6 +31,9 @@
 #include "core_mqtt.h"
 #include "core_mqtt_state.h"
 
+#include "FreeRTOS.h"
+#include "queue.h"
+
 /* Command messaging interface include. */
 #include "core_mqtt_agent_message_interface.h"
 
@@ -220,6 +223,11 @@ typedef struct MQTTAgentCommandInfo
 
 /*-----------------------------------------------------------*/
 
+typedef struct xMQTTAgentNode
+{
+	void * pvDummy[2];
+} MQTTAgentNode_t;
+
 /**
  * @brief Perform any initialization the MQTT agent requires before it can
  * be used. Must be called before any other function.
@@ -310,13 +318,11 @@ typedef struct MQTTAgentCommandInfo
  * @endcode
  */
 /* @[declare_mqtt_agent_init] */
-MQTTStatus_t MQTTAgent_Init( MQTTAgentContext_t * pMqttAgentContext,
-                             const MQTTAgentMessageInterface_t * pMsgInterface,
-                             const MQTTFixedBuffer_t * pNetworkBuffer,
+MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
                              const TransportInterface_t * pTransportInterface,
-                             MQTTGetCurrentTimeFunc_t getCurrentTimeMs,
-                             MQTTAgentIncomingPublishCallback_t incomingCallback,
-                             void * pIncomingPacketContext );
+                             MQTTGetCurrentTimeFunc_t getTimeFunction,
+                             MQTTEventCallback_t userCallback,
+                             const MQTTFixedBuffer_t * pNetworkBuffer );
 /* @[declare_mqtt_agent_init] */
 
 /**
@@ -363,85 +369,6 @@ MQTTStatus_t MQTTAgent_Init( MQTTAgentContext_t * pMqttAgentContext,
 MQTTStatus_t MQTTAgent_CommandLoop( MQTTAgentContext_t * pMqttAgentContext );
 /* @[declare_mqtt_agent_commandloop] */
 
-/**
- * @brief Resume a session by resending publishes if a session is present in
- * the broker, or clear state information if not.
- *
- * @param[in] pMqttAgentContext The MQTT agent to use.
- * @param[in] sessionPresent The session present flag from the broker.
- *
- * @note This function is NOT thread-safe and should only be called
- * from the context of the task responsible for #MQTTAgent_CommandLoop.
- *
- * @return #MQTTSuccess if it succeeds in resending publishes, else an
- * appropriate error code from `MQTT_Publish()`
- *
- * <b>Example</b>
- * @code{c}
- *
- * // Variables used in this example.
- * MQTTStatus_t status;
- * MQTTAgentContext_t mqttAgentContext;
- * MQTTConnectInfo_t connectInfo = { 0 };
- * MQTTPublishInfo_t willInfo = { 0 };
- * bool sessionPresent;
- *
- * // The example assumes that all variables have been filled with
- * // data for the MQTT_Connect call
- * // Refer to the MQTT_Connect API for a more detailed example.
- *
- * // Attempt to resume session with the broker.
- * status = MQTT_Connect( &( mqttAgentContext.mqttContext ), &connectInfo, &willInfo, 100, &sessionPresent )
- *
- * if( status == MQTTSuccess )
- * {
- *     // Process the session present status sent by the broker.
- *     status = MQTTAgent_ResumeSession( &mqttAgentContext, sessionPresent );
- * }
- * @endcode
- */
-/* @[declare_mqtt_agent_resumesession] */
-MQTTStatus_t MQTTAgent_ResumeSession( MQTTAgentContext_t * pMqttAgentContext,
-                                      bool sessionPresent );
-/* @[declare_mqtt_agent_resumesession] */
-
-/**
- * @brief Cancel all enqueued commands and those awaiting acknowledgment
- * while the command loop is not running.
- *
- * Canceled commands will be terminated with return code #MQTTRecvFailed.
- *
- * @param[in] pMqttAgentContext The MQTT agent to use.
- *
- * @note This function is NOT thread-safe and should only be called
- * from the context of the task responsible for #MQTTAgent_CommandLoop.
- *
- * @return #MQTTBadParameter if an invalid context is given, else #MQTTSuccess.
- *
- * <b>Example</b>
- * @code{c}
- *
- * // Variables used in this example.
- * MQTTStatus_t status;
- * MQTTAgentContext_t mqttAgentContext;
- *
- * status = MQTTAgent_CommandLoop( &mqttAgentContext );
- *
- * //An error was returned, but reconnection is not desired. Cancel all commands
- * //that are in the queue or awaiting an acknowledgment.
- * if( status != MQTTSuccess )
- * {
- *    //Cancel commands so any completion callbacks will be invoked.
- *    status = MQTTAgent_CancelAll( &mqttAgentContext );
- * }
- *
- * Platform_DisconnectNetwork( mqttAgentContext.mqttContext.transportInterface.pNetworkContext );
- *
- * @endcode
- */
-/* @[declare_mqtt_agent_cancelall] */
-MQTTStatus_t MQTTAgent_CancelAll( MQTTAgentContext_t * pMqttAgentContext );
-/* @[declare_mqtt_agent_cancelall] */
 
 /**
  * @brief Add a command to call MQTT_Subscribe() for an MQTT connection.
@@ -499,9 +426,11 @@ MQTTStatus_t MQTTAgent_CancelAll( MQTTAgentContext_t * pMqttAgentContext );
  * @endcode
  */
 /* @[declare_mqtt_agent_subscribe] */
-MQTTStatus_t MQTTAgent_Subscribe( const MQTTAgentContext_t * pMqttAgentContext,
-                                  MQTTAgentSubscribeArgs_t * pSubscriptionArgs,
-                                  const MQTTAgentCommandInfo_t * pCommandInfo );
+MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
+                                  const MQTTSubscribeInfo_t * pSubscription,
+                                  uint32_t timeoutMs,
+                                  QueueHandle_t uxQueue,
+								  void * Node );
 /* @[declare_mqtt_agent_subscribe] */
 
 /**
@@ -619,9 +548,9 @@ MQTTStatus_t MQTTAgent_Unsubscribe( const MQTTAgentContext_t * pMqttAgentContext
  * @endcode
  */
 /* @[declare_mqtt_agent_publish] */
-MQTTStatus_t MQTTAgent_Publish( const MQTTAgentContext_t * pMqttAgentContext,
-                                MQTTPublishInfo_t * pPublishInfo,
-                                const MQTTAgentCommandInfo_t * pCommandInfo );
+MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
+                                const MQTTPublishInfo_t * pPublishInfo,
+                                uint32_t timeoutMs );
 /* @[declare_mqtt_agent_publish] */
 
 /**
@@ -670,8 +599,8 @@ MQTTStatus_t MQTTAgent_Publish( const MQTTAgentContext_t * pMqttAgentContext,
  * @endcode
  */
 /* @[declare_mqtt_agent_processloop] */
-MQTTStatus_t MQTTAgent_ProcessLoop( const MQTTAgentContext_t * pMqttAgentContext,
-                                    const MQTTAgentCommandInfo_t * pCommandInfo );
+MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
+                                    uint32_t timeoutMs );
 /* @[declare_mqtt_agent_processloop] */
 
 /**
@@ -819,9 +748,11 @@ MQTTStatus_t MQTTAgent_Ping( const MQTTAgentContext_t * pMqttAgentContext,
  * @endcode
  */
 /* @[declare_mqtt_agent_connect] */
-MQTTStatus_t MQTTAgent_Connect( const MQTTAgentContext_t * pMqttAgentContext,
-                                MQTTAgentConnectArgs_t * pConnectArgs,
-                                const MQTTAgentCommandInfo_t * pCommandInfo );
+MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
+                                const MQTTConnectInfo_t * pConnectInfo,
+                                const MQTTPublishInfo_t * pWillInfo,
+                                uint32_t timeoutMs,
+                                bool * pSessionPresent );
 /* @[declare_mqtt_agent_connect] */
 
 /**
