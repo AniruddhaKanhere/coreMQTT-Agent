@@ -48,7 +48,6 @@
 
 /* MQTT agent include. */
 #include "core_mqtt_agent.h"
-#include "core_mqtt_agent_command_functions.h"
 
 /*-----------------------------------------------------------*/
 
@@ -58,6 +57,8 @@
 
 #define mqttagentTOPIC_LENGTH     20
 #define mqttagentMAX_TOPICS       5
+
+#define mqttagentSTACK_SIZE       600
 
 typedef struct xTaskTable
 {
@@ -79,12 +80,18 @@ typedef struct LinkedList
     Node_t * Head;
 } LinkedList_t;
 
-static LinkedList_t AgentLinkedLists[ mqttagentMAX_TOPICS ] = { { 0 } };
+/* Stack size of the agent task should be in words, not bytes. */
+static StackType_t mqttAgentStack[ mqttagentSTACK_SIZE ];
+static TaskHandle_t xMQTTAgentTaskHandle = NULL;
+static BaseType_t xConnected = pdFALSE;
+
+static LinkedList_t AgentLinkedLists[ mqttagentMAX_TOPICS ] = { { { 0 } } };
 
 static TaskTable_t AgentTable[ AGENT_OUTSTANDING_MSGS ];
 
 static SemaphoreHandle_t MQTTAgentMutex = NULL;
 static StaticSemaphore_t xMutexBuffer;
+static StaticTask_t xAgentTaskBuffer;
 
 static BaseType_t packetReceivedInLoop;
 
@@ -350,24 +357,36 @@ static void mqttEventCallback( MQTTContext_t * pMqttContext,
     }
 }
 
+static void prvMQTTAgentTask( void * pvParameters )
+{
+	MQTTContext_t * pContext = ( MQTTContext_t * ) pvParameters;
 
+    do
+    {
+    	if( xConnected == pdTRUE )
+    	{
+    	    MQTTAgent_ProcessLoop( pContext, 0 );
+    	}
+
+    	vTaskDelay( pdMS_TO_TICKS( 1 ) );
+    }while( 1 );
+
+    /* Delete the task if it is complete; which it never should. */
+    LogInfo( ( "MQTT Agent task completed." ) );
+    vTaskDelete( NULL );
+}
 
 MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
                              const TransportInterface_t * pTransportInterface,
                              MQTTGetCurrentTimeFunc_t getTimeFunction,
-                             MQTTEventCallback_t userCallback,
-                             const MQTTFixedBuffer_t * pNetworkBuffer )
+                             const MQTTFixedBuffer_t * pNetworkBuffer,
+							 UBaseType_t uxMQTTAgentPriority )
 {
     MQTTStatus_t returnStatus;
 
-    /* Not using userCallback right now. Currently, the agent's callback function 'mqttEventCallback'
-     * is used to dispatch ACKs and publishes to the respective owner tasks. */
-    ( void ) userCallback;
-
     if( ( pContext == NULL ) ||
         ( pTransportInterface == NULL ) ||
-        ( getTimeFunction == NULL ) ||
-        ( userCallback == NULL ) )
+        ( getTimeFunction == NULL ) )
     {
         returnStatus = MQTTBadParameter;
     }
@@ -390,6 +409,24 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
             if( MQTTAgentMutex == NULL )
             {
                 returnStatus = MQTTNoMemory;
+            }
+            else
+            {
+            	/* Create an instance of the MQTT agent task. Give it higher priority than the
+            	 * subscribe-publish tasks so that the agent's command queue will not become full,
+            	 * as those tasks need to send commands to the queue. */
+            	xMQTTAgentTaskHandle = xTaskCreateStatic( prvMQTTAgentTask,
+            	                                          "MQTT-Agent",
+				                       			          mqttagentSTACK_SIZE,
+							                              ( void * ) pContext,
+							                              uxMQTTAgentPriority,
+							                              mqttAgentStack,
+							                              &xAgentTaskBuffer );
+
+            	if( xMQTTAgentTaskHandle == NULL )
+            	{
+            	    returnStatus = MQTTNoMemory;
+            	}
             }
         }
     }
@@ -458,9 +495,7 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
 
 /*-----------------------------------------------------------*/
 
-MQTTStatus_t MQTTAgent_Unsubscribe( const MQTTAgentContext_t * pMqttAgentContext,
-                                    MQTTAgentSubscribeArgs_t * pSubscriptionArgs,
-                                    const MQTTAgentCommandInfo_t * pCommandInfo )
+MQTTStatus_t MQTTAgent_Unsubscribe( void )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
 
@@ -552,12 +587,17 @@ MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
                                 bool * pSessionPresent )
 {
     MQTTStatus_t statusReturn = MQTTKeepAliveTimeout;
-    uint16_t usPacketID;
     uint32_t LocaltimeoutMs = timeoutMs;
 
     if( xSemaphoreTake( MQTTAgentMutex, LocaltimeoutMs ) == pdPASS )
     {
         statusReturn = MQTT_Connect( pContext, pConnectInfo, pWillInfo, timeoutMs, pSessionPresent );
+
+        if( statusReturn == MQTTSuccess )
+        {
+        	/* Mark that the MQTT session is connected. */
+        	xConnected = pdTRUE;
+        }
 
         xSemaphoreGive( MQTTAgentMutex );
     }
@@ -567,8 +607,21 @@ MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
 
 /*-----------------------------------------------------------*/
 
-MQTTStatus_t MQTTAgent_Disconnect( const MQTTAgentContext_t * pMqttAgentContext,
-                                   const MQTTAgentCommandInfo_t * pCommandInfo )
+MQTTStatus_t MQTTAgent_Disconnect( void )
+{
+    MQTTStatus_t statusReturn = MQTTBadParameter;
+
+    /* Implementation TBD. */
+    /*
+     * - set xConnected to false
+     */
+
+    return statusReturn;
+}
+
+/*-----------------------------------------------------------*/
+
+MQTTStatus_t MQTTAgent_Ping( void )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
 
@@ -579,24 +632,14 @@ MQTTStatus_t MQTTAgent_Disconnect( const MQTTAgentContext_t * pMqttAgentContext,
 
 /*-----------------------------------------------------------*/
 
-MQTTStatus_t MQTTAgent_Ping( const MQTTAgentContext_t * pMqttAgentContext,
-                             const MQTTAgentCommandInfo_t * pCommandInfo )
+MQTTStatus_t MQTTAgent_Terminate( void )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
 
     /* Implementation TBD. */
-
-    return statusReturn;
-}
-
-/*-----------------------------------------------------------*/
-
-MQTTStatus_t MQTTAgent_Terminate( const MQTTAgentContext_t * pMqttAgentContext,
-                                  const MQTTAgentCommandInfo_t * pCommandInfo )
-{
-    MQTTStatus_t statusReturn = MQTTBadParameter;
-
-    /* Implementation TBD. */
+    /*
+     * Delete the agent task.
+     */
 
     return statusReturn;
 }
