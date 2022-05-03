@@ -366,17 +366,17 @@ static void mqttEventCallback( MQTTContext_t * pMqttContext,
  */
 static void prvMQTTAgentTask( void * pvParameters )
 {
-	MQTTContext_t * pContext = ( MQTTContext_t * ) pvParameters;
+    MQTTContext_t * pContext = ( MQTTContext_t * ) pvParameters;
 
     do
     {
-    	if( xConnected == pdTRUE )
-    	{
-    	    MQTTAgent_ProcessLoop( pContext, 0 );
-    	}
+        if( xConnected == pdTRUE )
+        {
+            MQTTAgent_ProcessLoop( pContext, 0 );
+        }
 
-    	vTaskDelay( pdMS_TO_TICKS( 8 ) );
-    }while( 1 );
+        vTaskDelay( pdMS_TO_TICKS( 8 ) );
+    } while( 1 );
 
     /* Delete the task if it is complete; which it never should. */
     LogInfo( ( "MQTT Agent task completed." ) );
@@ -387,7 +387,7 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
                              const TransportInterface_t * pTransportInterface,
                              MQTTGetCurrentTimeFunc_t getTimeFunction,
                              const MQTTFixedBuffer_t * pNetworkBuffer,
-							 UBaseType_t uxMQTTAgentPriority )
+                             UBaseType_t uxMQTTAgentPriority )
 {
     MQTTStatus_t returnStatus;
 
@@ -419,21 +419,21 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
             }
             else
             {
-            	/* Create an instance of the MQTT agent task. Give it higher priority than the
-            	 * subscribe-publish tasks so that the agent's command queue will not become full,
-            	 * as those tasks need to send commands to the queue. */
-            	xMQTTAgentTaskHandle = xTaskCreateStatic( prvMQTTAgentTask,
-            	                                          "MQTT-Agent",
-				                       			          mqttagentSTACK_SIZE,
-							                              ( void * ) pContext,
-							                              uxMQTTAgentPriority,
-							                              mqttAgentStack,
-							                              &xAgentTaskBuffer );
+                /* Create an instance of the MQTT agent task. Give it higher priority than the
+                 * subscribe-publish tasks so that the agent's command queue will not become full,
+                 * as those tasks need to send commands to the queue. */
+                xMQTTAgentTaskHandle = xTaskCreateStatic( prvMQTTAgentTask,
+                                                          "MQTT-Agent",
+                                                          mqttagentSTACK_SIZE,
+                                                          ( void * ) pContext,
+                                                          uxMQTTAgentPriority,
+                                                          mqttAgentStack,
+                                                          &xAgentTaskBuffer );
 
-            	if( xMQTTAgentTaskHandle == NULL )
-            	{
-            	    returnStatus = MQTTNoMemory;
-            	}
+                if( xMQTTAgentTaskHandle == NULL )
+                {
+                    returnStatus = MQTTNoMemory;
+                }
             }
         }
     }
@@ -602,8 +602,8 @@ MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
 
         if( statusReturn == MQTTSuccess )
         {
-        	/* Mark that the MQTT session is connected. */
-        	xConnected = pdTRUE;
+            /* Mark that the MQTT session is connected. */
+            xConnected = pdTRUE;
         }
 
         xSemaphoreGive( MQTTAgentMutex );
@@ -619,6 +619,7 @@ MQTTStatus_t MQTTAgent_Disconnect( void )
     MQTTStatus_t statusReturn = MQTTBadParameter;
 
     /* Implementation TBD. */
+
     /*
      * - set xConnected to false
      */
@@ -644,6 +645,7 @@ MQTTStatus_t MQTTAgent_Terminate( void )
     MQTTStatus_t statusReturn = MQTTBadParameter;
 
     /* Implementation TBD. */
+
     /*
      * Delete the agent task.
      */

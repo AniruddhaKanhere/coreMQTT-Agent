@@ -170,7 +170,7 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
                              const TransportInterface_t * pTransportInterface,
                              MQTTGetCurrentTimeFunc_t getTimeFunction,
                              const MQTTFixedBuffer_t * pNetworkBuffer,
-							 UBaseType_t uxMQTTAgentPriority );
+                             UBaseType_t uxMQTTAgentPriority );
 /* @[declare_mqtt_agent_init] */
 
 /**
