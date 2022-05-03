@@ -95,6 +95,7 @@ static StaticTask_t xAgentTaskBuffer;
 
 static BaseType_t packetReceivedInLoop;
 
+static void prvMQTTAgentTask( void * pvParameters );
 
 static BaseType_t AddToTable( TaskHandle_t xTaskHandle,
                               uint16_t usPacketID );
@@ -261,7 +262,7 @@ static BaseType_t xSendToAllQueues( LinkedList_t xList,
                                     const void * pvPayload,
                                     size_t uxPayloadLength )
 {
-    BaseType_t xReturn;
+    BaseType_t xReturn = pdPASS;
 
     Node_t * pxCurrent = xList.Head;
 
@@ -357,6 +358,12 @@ static void mqttEventCallback( MQTTContext_t * pMqttContext,
     }
 }
 
+/*
+ * @brief The MQTT Agent task. This task is responsible for running the MQTT ProcessLoop
+ *        command periodically. Ideally, this should be run only when there is data present
+ *        in the socket to be read. However, the offloaded stack doesn't have one such
+ *        function, thus, we have added a task delay.
+ */
 static void prvMQTTAgentTask( void * pvParameters )
 {
 	MQTTContext_t * pContext = ( MQTTContext_t * ) pvParameters;
@@ -368,7 +375,7 @@ static void prvMQTTAgentTask( void * pvParameters )
     	    MQTTAgent_ProcessLoop( pContext, 0 );
     	}
 
-    	vTaskDelay( pdMS_TO_TICKS( 1 ) );
+    	vTaskDelay( pdMS_TO_TICKS( 8 ) );
     }while( 1 );
 
     /* Delete the task if it is complete; which it never should. */
