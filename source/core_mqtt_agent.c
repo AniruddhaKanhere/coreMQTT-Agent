@@ -51,16 +51,16 @@
 
 /*-----------------------------------------------------------*/
 
-#define AGENT_OUTSTANDING_MSGS    10
+#define AGENT_OUTSTANDING_MSGS     10
 
-#define agentINCOMING_ACK         0x01
+#define agentINCOMING_ACK          0x01
 
-#define mqttagentTOPIC_LENGTH     20
-#define mqttagentMAX_TOPICS       5
+#define mqttagentTOPIC_LENGTH      20
+#define mqttagentMAX_TOPICS        5
 
-#define mqttagentSTACK_SIZE       600
+#define mqttagentSTACK_SIZE        600
 
-#define mqttagentUSE_AGENT_TASK   1
+#define mqttagentUSE_AGENT_TASK    1
 
 typedef struct xTaskTable
 {
@@ -82,22 +82,22 @@ typedef struct LinkedList
     Node_t * Head;
 } LinkedList_t;
 
-#if( mqttagentUSE_AGENT_TASK == 1 )
+#if ( mqttagentUSE_AGENT_TASK == 1 )
     /* Stack size of the agent task should be in words, not bytes. */
     static StackType_t mqttAgentStack[ mqttagentSTACK_SIZE ];
 
-    /* Task Control block used for Agent task. */
+/* Task Control block used for Agent task. */
     static StaticTask_t xAgentTaskBuffer;
 
-    /* Handle of the Agent task. */
+/* Handle of the Agent task. */
     static TaskHandle_t xMQTTAgentTaskHandle = NULL;
 
-    /* Linked list for all the topics and their subscribers. */
+/* Linked list for all the topics and their subscribers. */
     static LinkedList_t AgentLinkedLists[ mqttagentMAX_TOPICS ] = { { { 0 } } };
 
-    /* Table to track ACKs. This is used only in case of QoS1. */
+/* Table to track ACKs. This is used only in case of QoS1. */
     static TaskTable_t AgentTable[ AGENT_OUTSTANDING_MSGS ];
-#endif
+#endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 
 /* The below variable will be set to pdTRUE when the call the MQTT_Connect succeeds.
  * This triggers the MQTT Agent to run. */
@@ -113,7 +113,7 @@ static StaticSemaphore_t xMutexBuffer;
  * variable is reset. */
 static volatile BaseType_t packetReceivedInLoop;
 
-#if( mqttagentUSE_AGENT_TASK == 1 )
+#if ( mqttagentUSE_AGENT_TASK == 1 )
 
     static void prvMQTTAgentTask( void * pvParameters );
 
@@ -130,221 +130,221 @@ static volatile BaseType_t packetReceivedInLoop;
                                                   QueueHandle_t uxQueue,
                                                   Node_t * Node );
 
-    /**
-	 * @brief Handle incoming publishes and dispatch them to various queues.
-	 *
-	 * @param[in] pPacketInfo The packet information data structure.
-	 * @param[in] pIncomingPublishInfo Data about incoming publish.
-	 * @param[in] packetIdentifier MQTT Packet ID.
-	 */
+/**
+ * @brief Handle incoming publishes and dispatch them to various queues.
+ *
+ * @param[in] pPacketInfo The packet information data structure.
+ * @param[in] pIncomingPublishInfo Data about incoming publish.
+ * @param[in] packetIdentifier MQTT Packet ID.
+ */
     static BaseType_t HandleIncomingPublishes( MQTTPacketInfo_t * pPacketInfo,
-                                                MQTTPublishInfo_t * pIncomingPublishInfo,
-                                                uint16_t packetIdentifier );
+                                               MQTTPublishInfo_t * pIncomingPublishInfo,
+                                               uint16_t packetIdentifier );
 
-    /**
-     * @brief Dispatch incoming publishes and ACKs to their various handler functions.
-     *
-     * @param[in] pMqttContext MQTT Context
-     * @param[in] pPacketInfo Pointer to incoming packet.
-     * @param[in] pDeserializedInfo Pointer to deserialized information from
-     * the incoming packet.
-     */
+/**
+ * @brief Dispatch incoming publishes and ACKs to their various handler functions.
+ *
+ * @param[in] pMqttContext MQTT Context
+ * @param[in] pPacketInfo Pointer to incoming packet.
+ * @param[in] pDeserializedInfo Pointer to deserialized information from
+ * the incoming packet.
+ */
     static void mqttEventCallback( MQTTContext_t * pMqttContext,
                                    MQTTPacketInfo_t * pPacketInfo,
                                    MQTTDeserializedInfo_t * pDeserializedInfo );
-#endif
+#endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 
-#if( mqttagentUSE_AGENT_TASK == 1 )
-	static BaseType_t AddToTable( TaskHandle_t xTaskHandle,
-								  uint16_t usPacketID )
-	{
-		int i;
-		BaseType_t xReturn = pdFAIL;
-
-		for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
-		{
-			if( AgentTable[ i ].xTaskHandle == NULL )
-			{
-				AgentTable[ i ].xTaskHandle = xTaskHandle;
-				AgentTable[ i ].usPacketID = usPacketID;
-				break;
-			}
-		}
-
-		if( i != AGENT_OUTSTANDING_MSGS )
-		{
-			xReturn = pdPASS;
-		}
-
-		return xReturn;
-	}
-
-	static TaskHandle_t FindAndRemoveFromTable( uint16_t usPacketID )
-	{
-		int i;
-		TaskHandle_t xReturn = NULL;
-
-		for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
-		{
-			if( AgentTable[ i ].usPacketID == usPacketID )
-			{
-				xReturn = AgentTable[ i ].xTaskHandle;
-
-				AgentTable[ i ].xTaskHandle = NULL;
-				AgentTable[ i ].usPacketID = 0;
-
-				break;
-			}
-		}
-
-		return xReturn;
-	}
-
-
-static BaseType_t HandleIncomingACKs( MQTTPacketInfo_t * pPacketInfo,
-                                      uint16_t packetIdentifier )
-{
-    TaskHandle_t xTaskToNotify;
-    BaseType_t xReturn = pdFAIL;
-
-    /* Not using incoming packet information right now. Only the packet ID
-     * is required to match incoming ACKs with the publishes that were sent. */
-    ( void ) pPacketInfo;
-
-    xTaskToNotify = FindAndRemoveFromTable( packetIdentifier );
-
-    if( xTaskToNotify != NULL )
+#if ( mqttagentUSE_AGENT_TASK == 1 )
+    static BaseType_t AddToTable( TaskHandle_t xTaskHandle,
+                                  uint16_t usPacketID )
     {
-        ( void ) xTaskNotify( xTaskToNotify,
-                              agentINCOMING_ACK,
-                              eSetValueWithOverwrite );
+        int i;
+        BaseType_t xReturn = pdFAIL;
 
-        xReturn = pdPASS;
-    }
-    else
-    {
-        LogError( ( "Incoming ACK for unwanted packet ID %d", packetIdentifier ) );
-    }
-
-    return xReturn;
-}
-
-static BaseType_t AddQueueToSubscriptionList( const MQTTSubscribeInfo_t * pSubscription,
-                                              QueueHandle_t uxQueue,
-                                              Node_t * Node )
-{
-    BaseType_t xReturn = pdFAIL;
-    UBaseType_t i;
-    Node_t * pxCurrent, * pxPrevious = NULL;
-    const char * topic;
-    LinkedList_t * pxEmptyLinkedList = NULL;
-
-    for( i = 0; i < mqttagentMAX_TOPICS; i++ )
-    {
-        topic = AgentLinkedLists[ i ].pucTopic;
-
-        /* If any matching topic is found with similar QoS. */
-        if( ( strncmp( topic, pSubscription->pTopicFilter, mqttagentTOPIC_LENGTH ) == 0 ) && ( AgentLinkedLists[ i ].xQoS == pSubscription->qos ) )
+        for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
         {
-            pxCurrent = AgentLinkedLists[ i ].Head;
-            pxPrevious = pxCurrent;
-
-            /* Find the tail of the linked list */
-            while( pxCurrent != NULL )
+            if( AgentTable[ i ].xTaskHandle == NULL )
             {
-                pxPrevious = pxCurrent;
-                pxCurrent = pxCurrent->pxNext;
+                AgentTable[ i ].xTaskHandle = xTaskHandle;
+                AgentTable[ i ].usPacketID = usPacketID;
+                break;
             }
-
-            pxPrevious->pxNext = Node;
-            pxPrevious->pxNext->xQueue = uxQueue;
-            pxPrevious->pxNext->pxNext = NULL;
-
-            xReturn = pdPASS;
-
-            break;
         }
-        else if( AgentLinkedLists[ i ].pucTopic[ 0 ] == '\0' )
+
+        if( i != AGENT_OUTSTANDING_MSGS )
         {
-            pxEmptyLinkedList = &AgentLinkedLists[ i ];
-        }
-    }
-
-    /* If we reached the end without finding a match. */
-    if( i == mqttagentMAX_TOPICS )
-    {
-        if( pxEmptyLinkedList != NULL )
-        {
-            pxEmptyLinkedList->Head = Node;
-            pxEmptyLinkedList->Head->xQueue = uxQueue;
-            pxEmptyLinkedList->Head->pxNext = NULL;
-            pxEmptyLinkedList->usTopicNameLength = strlen( pSubscription->pTopicFilter );
-
-            strcpy( pxEmptyLinkedList->pucTopic, pSubscription->pTopicFilter );
-
             xReturn = pdPASS;
         }
+
+        return xReturn;
     }
 
-    return xReturn;
-}
-
-static BaseType_t xSendToAllQueues( LinkedList_t xList,
-                                    const void * pvPayload,
-                                    size_t uxPayloadLength )
-{
-    BaseType_t xReturn = pdPASS;
-
-    Node_t * pxCurrent = xList.Head;
-
-    while( pxCurrent != NULL )
+    static TaskHandle_t FindAndRemoveFromTable( uint16_t usPacketID )
     {
-        xQueueSendToBack( pxCurrent->xQueue, pvPayload, portMAX_DELAY );
+        int i;
+        TaskHandle_t xReturn = NULL;
 
-        pxCurrent = pxCurrent->pxNext;
-    }
-
-    return xReturn;
-}
-
-static BaseType_t HandleIncomingPublishes( MQTTPacketInfo_t * pPacketInfo,
-                                            MQTTPublishInfo_t * pIncomingPublishInfo,
-                                            uint16_t packetIdentifier )
-{
-    BaseType_t xReturn = pdFAIL;
-    bool IsMatching;
-    UBaseType_t i;
-
-    for( i = 0; i < mqttagentMAX_TOPICS; i++ )
-    {
-        if( AgentLinkedLists[ i ].pucTopic[ 0 ] != '\0' )
+        for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
         {
-            IsMatching = false;
-
-            MQTT_MatchTopic( pIncomingPublishInfo->pTopicName,
-                             pIncomingPublishInfo->topicNameLength,
-                             AgentLinkedLists[ i ].pucTopic,
-                             AgentLinkedLists[ i ].usTopicNameLength,
-                             &IsMatching );
-
-            if( IsMatching == true )
+            if( AgentTable[ i ].usPacketID == usPacketID )
             {
-                /* Found a match. Send the message to all the queues. */
-                xSendToAllQueues( AgentLinkedLists[ i ], pIncomingPublishInfo->pPayload, pIncomingPublishInfo->payloadLength );
+                xReturn = AgentTable[ i ].xTaskHandle;
+
+                AgentTable[ i ].xTaskHandle = NULL;
+                AgentTable[ i ].usPacketID = 0;
+
+                break;
+            }
+        }
+
+        return xReturn;
+    }
+
+
+    static BaseType_t HandleIncomingACKs( MQTTPacketInfo_t * pPacketInfo,
+                                          uint16_t packetIdentifier )
+    {
+        TaskHandle_t xTaskToNotify;
+        BaseType_t xReturn = pdFAIL;
+
+        /* Not using incoming packet information right now. Only the packet ID
+         * is required to match incoming ACKs with the publishes that were sent. */
+        ( void ) pPacketInfo;
+
+        xTaskToNotify = FindAndRemoveFromTable( packetIdentifier );
+
+        if( xTaskToNotify != NULL )
+        {
+            ( void ) xTaskNotify( xTaskToNotify,
+                                  agentINCOMING_ACK,
+                                  eSetValueWithOverwrite );
+
+            xReturn = pdPASS;
+        }
+        else
+        {
+            LogError( ( "Incoming ACK for unwanted packet ID %d", packetIdentifier ) );
+        }
+
+        return xReturn;
+    }
+
+    static BaseType_t AddQueueToSubscriptionList( const MQTTSubscribeInfo_t * pSubscription,
+                                                  QueueHandle_t uxQueue,
+                                                  Node_t * Node )
+    {
+        BaseType_t xReturn = pdFAIL;
+        UBaseType_t i;
+        Node_t * pxCurrent, * pxPrevious = NULL;
+        const char * topic;
+        LinkedList_t * pxEmptyLinkedList = NULL;
+
+        for( i = 0; i < mqttagentMAX_TOPICS; i++ )
+        {
+            topic = AgentLinkedLists[ i ].pucTopic;
+
+            /* If any matching topic is found with similar QoS. */
+            if( ( strncmp( topic, pSubscription->pTopicFilter, mqttagentTOPIC_LENGTH ) == 0 ) && ( AgentLinkedLists[ i ].xQoS == pSubscription->qos ) )
+            {
+                pxCurrent = AgentLinkedLists[ i ].Head;
+                pxPrevious = pxCurrent;
+
+                /* Find the tail of the linked list */
+                while( pxCurrent != NULL )
+                {
+                    pxPrevious = pxCurrent;
+                    pxCurrent = pxCurrent->pxNext;
+                }
+
+                pxPrevious->pxNext = Node;
+                pxPrevious->pxNext->xQueue = uxQueue;
+                pxPrevious->pxNext->pxNext = NULL;
+
+                xReturn = pdPASS;
+
+                break;
+            }
+            else if( AgentLinkedLists[ i ].pucTopic[ 0 ] == '\0' )
+            {
+                pxEmptyLinkedList = &AgentLinkedLists[ i ];
+            }
+        }
+
+        /* If we reached the end without finding a match. */
+        if( i == mqttagentMAX_TOPICS )
+        {
+            if( pxEmptyLinkedList != NULL )
+            {
+                pxEmptyLinkedList->Head = Node;
+                pxEmptyLinkedList->Head->xQueue = uxQueue;
+                pxEmptyLinkedList->Head->pxNext = NULL;
+                pxEmptyLinkedList->usTopicNameLength = strlen( pSubscription->pTopicFilter );
+
+                strcpy( pxEmptyLinkedList->pucTopic, pSubscription->pTopicFilter );
+
                 xReturn = pdPASS;
             }
         }
+
+        return xReturn;
     }
 
-    return xReturn;
-}
+    static BaseType_t xSendToAllQueues( LinkedList_t xList,
+                                        const void * pvPayload,
+                                        size_t uxPayloadLength )
+    {
+        BaseType_t xReturn = pdPASS;
 
-    /*
-     * @brief The MQTT Agent task. This task is responsible for running the MQTT ProcessLoop
-     *        command periodically. Ideally, this should be run only when there is data present
-     *        in the socket to be read. However, the offloaded stack doesn't have one such
-     *        function, thus, we have added a task delay.
-     */
+        Node_t * pxCurrent = xList.Head;
+
+        while( pxCurrent != NULL )
+        {
+            xQueueSendToBack( pxCurrent->xQueue, pvPayload, portMAX_DELAY );
+
+            pxCurrent = pxCurrent->pxNext;
+        }
+
+        return xReturn;
+    }
+
+    static BaseType_t HandleIncomingPublishes( MQTTPacketInfo_t * pPacketInfo,
+                                               MQTTPublishInfo_t * pIncomingPublishInfo,
+                                               uint16_t packetIdentifier )
+    {
+        BaseType_t xReturn = pdFAIL;
+        bool IsMatching;
+        UBaseType_t i;
+
+        for( i = 0; i < mqttagentMAX_TOPICS; i++ )
+        {
+            if( AgentLinkedLists[ i ].pucTopic[ 0 ] != '\0' )
+            {
+                IsMatching = false;
+
+                MQTT_MatchTopic( pIncomingPublishInfo->pTopicName,
+                                 pIncomingPublishInfo->topicNameLength,
+                                 AgentLinkedLists[ i ].pucTopic,
+                                 AgentLinkedLists[ i ].usTopicNameLength,
+                                 &IsMatching );
+
+                if( IsMatching == true )
+                {
+                    /* Found a match. Send the message to all the queues. */
+                    xSendToAllQueues( AgentLinkedLists[ i ], pIncomingPublishInfo->pPayload, pIncomingPublishInfo->payloadLength );
+                    xReturn = pdPASS;
+                }
+            }
+        }
+
+        return xReturn;
+    }
+
+/*
+ * @brief The MQTT Agent task. This task is responsible for running the MQTT ProcessLoop
+ *        command periodically. Ideally, this should be run only when there is data present
+ *        in the socket to be read. However, the offloaded stack doesn't have one such
+ *        function, thus, we have added a task delay.
+ */
     static void prvMQTTAgentTask( void * pvParameters )
     {
         MQTTContext_t * pContext = ( MQTTContext_t * ) pvParameters;
@@ -363,58 +363,59 @@ static BaseType_t HandleIncomingPublishes( MQTTPacketInfo_t * pPacketInfo,
         LogInfo( ( "MQTT Agent task completed." ) );
         vTaskDelete( NULL );
     }
-#endif
+#endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 
 static void mqttEventCallback( MQTTContext_t * pMqttContext,
-							   MQTTPacketInfo_t * pPacketInfo,
-							   MQTTDeserializedInfo_t * pDeserializedInfo )
+                               MQTTPacketInfo_t * pPacketInfo,
+                               MQTTDeserializedInfo_t * pDeserializedInfo )
 {
-	uint16_t packetIdentifier = pDeserializedInfo->packetIdentifier;
-	const uint8_t upperNibble = ( uint8_t ) 0xF0;
+    uint16_t packetIdentifier = pDeserializedInfo->packetIdentifier;
+    const uint8_t upperNibble = ( uint8_t ) 0xF0;
 
-	assert( pMqttContext != NULL );
-	assert( pPacketInfo != NULL );
+    assert( pMqttContext != NULL );
+    assert( pPacketInfo != NULL );
 
-	/* This callback executes from within MQTT_ProcessLoop().  Setting this flag
-	 * indicates that the callback executed so the caller of MQTT_ProcessLoop() knows
-	 * it should call it again as there may be more data to process. */
-	packetReceivedInLoop = true;
+    /* This callback executes from within MQTT_ProcessLoop().  Setting this flag
+     * indicates that the callback executed so the caller of MQTT_ProcessLoop() knows
+     * it should call it again as there may be more data to process. */
+    packetReceivedInLoop = true;
 
-	#if( mqttagentUSE_AGENT_TASK == 1 )
-		/* Handle incoming publish. The lower 4 bits of the publish packet type is used
-		 * for the dup, QoS, and retain flags. Hence masking out the lower bits to check
-		 * if the packet is publish. */
-		if( ( pPacketInfo->type & upperNibble ) == MQTT_PACKET_TYPE_PUBLISH )
-		{
-			/* Handle the incoming publish. */
-			( void ) HandleIncomingPublishes( pPacketInfo, pDeserializedInfo->pPublishInfo, packetIdentifier );
-		}
-		else
-		{
-			/* Handle other packets. */
-			switch( pPacketInfo->type )
-			{
-				case MQTT_PACKET_TYPE_PUBACK:
-				case MQTT_PACKET_TYPE_PUBCOMP: /* QoS 2 command completion. */
-				case MQTT_PACKET_TYPE_SUBACK:
-				case MQTT_PACKET_TYPE_UNSUBACK:
-					( void ) HandleIncomingACKs( pPacketInfo, packetIdentifier );
-					break;
+    #if ( mqttagentUSE_AGENT_TASK == 1 )
 
-				/* Nothing to do for these packets since they don't indicate command completion. */
-				case MQTT_PACKET_TYPE_PUBREC:
-				case MQTT_PACKET_TYPE_PUBREL:
-					break;
+        /* Handle incoming publish. The lower 4 bits of the publish packet type is used
+         * for the dup, QoS, and retain flags. Hence masking out the lower bits to check
+         * if the packet is publish. */
+        if( ( pPacketInfo->type & upperNibble ) == MQTT_PACKET_TYPE_PUBLISH )
+        {
+            /* Handle the incoming publish. */
+            ( void ) HandleIncomingPublishes( pPacketInfo, pDeserializedInfo->pPublishInfo, packetIdentifier );
+        }
+        else
+        {
+            /* Handle other packets. */
+            switch( pPacketInfo->type )
+            {
+                case MQTT_PACKET_TYPE_PUBACK:
+                case MQTT_PACKET_TYPE_PUBCOMP: /* QoS 2 command completion. */
+                case MQTT_PACKET_TYPE_SUBACK:
+                case MQTT_PACKET_TYPE_UNSUBACK:
+                    ( void ) HandleIncomingACKs( pPacketInfo, packetIdentifier );
+                    break;
 
-				/* Any other packet type is invalid. */
-				case MQTT_PACKET_TYPE_PINGRESP:
-				default:
-					LogError( ( "Unknown packet type received:(%02x).\n",
-								pPacketInfo->type ) );
-					break;
-			}
-		}
-	#endif
+                /* Nothing to do for these packets since they don't indicate command completion. */
+                case MQTT_PACKET_TYPE_PUBREC:
+                case MQTT_PACKET_TYPE_PUBREL:
+                    break;
+
+                /* Any other packet type is invalid. */
+                case MQTT_PACKET_TYPE_PINGRESP:
+                default:
+                    LogError( ( "Unknown packet type received:(%02x).\n",
+                                pPacketInfo->type ) );
+                    break;
+            }
+        }
+    #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 }
 
 MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
@@ -435,7 +436,7 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
     {
         ( void ) memset( pContext, 0x00, sizeof( MQTTContext_t ) );
 
-        #if( mqttagentUSE_AGENT_TASK == 1 )
+        #if ( mqttagentUSE_AGENT_TASK == 1 )
             ( void ) memset( AgentTable, 0x00, AGENT_OUTSTANDING_MSGS * sizeof( TaskTable_t ) );
         #endif
 
@@ -456,7 +457,8 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
             }
             else
             {
-                #if( mqttagentUSE_AGENT_TASK == 1 )
+                #if ( mqttagentUSE_AGENT_TASK == 1 )
+
                     /* Create an instance of the MQTT agent task. Give it higher priority than the
                      * subscribe-publish tasks so that the agent's command queue will not become full,
                      * as those tasks need to send commands to the queue. */
@@ -472,7 +474,7 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
                     {
                         returnStatus = MQTTNoMemory;
                     }
-                #endif
+                #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
             }
         }
     }
@@ -501,43 +503,43 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
     configASSERT( uxQueue != NULL );
     configASSERT( pNode != NULL );
 
-    #if( mqttagentUSE_AGENT_TASK == 1 )
-		if( xSemaphoreTake( MQTTAgentMutex, portMAX_DELAY ) == pdPASS )
-		{
-			packetId = MQTT_GetPacketId( pContext );
-			statusReturn = MQTT_Subscribe( pContext,
-										   pSubscription,
-										   1,
-										   packetId );
+    #if ( mqttagentUSE_AGENT_TASK == 1 )
+        if( xSemaphoreTake( MQTTAgentMutex, portMAX_DELAY ) == pdPASS )
+        {
+            packetId = MQTT_GetPacketId( pContext );
+            statusReturn = MQTT_Subscribe( pContext,
+                                           pSubscription,
+                                           1,
+                                           packetId );
 
-			if( statusReturn == MQTTSuccess )
-			{
-				AddQueueToSubscriptionList( pSubscription,
-											uxQueue,
-											( Node_t * ) pNode );
+            if( statusReturn == MQTTSuccess )
+            {
+                AddQueueToSubscriptionList( pSubscription,
+                                            uxQueue,
+                                            ( Node_t * ) pNode );
 
-				AddToTable( xTaskGetCurrentTaskHandle(), packetId );
+                AddToTable( xTaskGetCurrentTaskHandle(), packetId );
 
-				xSemaphoreGive( MQTTAgentMutex );
+                xSemaphoreGive( MQTTAgentMutex );
 
-				ulReturn = ulTaskNotifyTake( pdTRUE,
-											 portMAX_DELAY );
+                ulReturn = ulTaskNotifyTake( pdTRUE,
+                                             portMAX_DELAY );
 
-				configASSERT( ulReturn == agentINCOMING_ACK );
+                configASSERT( ulReturn == agentINCOMING_ACK );
 
-				if( ulReturn != agentINCOMING_ACK )
-				{
-					LogError( ( "Unexpected notification to the task. %d\n", ulReturn ) );
-				}
-			}
-		}
-		else
-		{
-			/* Returning this value to depict timeout since MQTT does
-			 * not have a better method right now. */
-			statusReturn = MQTTKeepAliveTimeout;
-		}
-    #endif
+                if( ulReturn != agentINCOMING_ACK )
+                {
+                    LogError( ( "Unexpected notification to the task. %d\n", ulReturn ) );
+                }
+            }
+        }
+        else
+        {
+            /* Returning this value to depict timeout since MQTT does
+             * not have a better method right now. */
+            statusReturn = MQTTKeepAliveTimeout;
+        }
+    #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 
     return statusReturn;
 }
@@ -576,25 +578,25 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
 
         if( statusReturn == MQTTSuccess )
         {
-            #if( mqttagentUSE_AGENT_TASK == 1 )
-            if( pPublishInfo->qos != MQTTQoS0 )
-            {
-                AddToTable( xTaskGetCurrentTaskHandle(), usPacketID );
-
-                xSemaphoreGive( MQTTAgentMutex );
-
-                ulReturn = ulTaskNotifyTake( pdTRUE,
-                                             portMAX_DELAY );
-
-                configASSERT( ulReturn == agentINCOMING_ACK );
-
-                if( ulReturn != agentINCOMING_ACK )
+            #if ( mqttagentUSE_AGENT_TASK == 1 )
+                if( pPublishInfo->qos != MQTTQoS0 )
                 {
-                    LogError( ( "Unexpected notification to the task. %d\n", ulReturn ) );
+                    AddToTable( xTaskGetCurrentTaskHandle(), usPacketID );
+
+                    xSemaphoreGive( MQTTAgentMutex );
+
+                    ulReturn = ulTaskNotifyTake( pdTRUE,
+                                                 portMAX_DELAY );
+
+                    configASSERT( ulReturn == agentINCOMING_ACK );
+
+                    if( ulReturn != agentINCOMING_ACK )
+                    {
+                        LogError( ( "Unexpected notification to the task. %d\n", ulReturn ) );
+                    }
                 }
-            }
-            else
-            #endif
+                else
+            #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
             {
                 xSemaphoreGive( MQTTAgentMutex );
             }
