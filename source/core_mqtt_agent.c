@@ -42,10 +42,6 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include "FreeRTOS.h"
-#include "semphr.h"
-#include "queue.h"
-
 /* MQTT agent include. */
 #include "core_mqtt_agent.h"
 
@@ -123,38 +119,33 @@ static volatile BaseType_t packetReceivedInLoop;
     static TaskHandle_t FindAndRemoveFromTable( uint16_t usPacketID );
 
 
-    static BaseType_t HandleIncomingACKs( MQTTPacketInfo_t * pPacketInfo,
-                                          uint16_t packetIdentifier );
+    static BaseType_t HandleIncomingACKs( uint16_t packetIdentifier );
 
     static BaseType_t AddQueueToSubscriptionList( const MQTTSubscribeInfo_t * pSubscription,
                                                   QueueHandle_t uxQueue,
                                                   Node_t * Node );
 
-/**
- * @brief Handle incoming publishes and dispatch them to various queues.
- *
- * @param[in] pPacketInfo The packet information data structure.
- * @param[in] pIncomingPublishInfo Data about incoming publish.
- * @param[in] packetIdentifier MQTT Packet ID.
- */
     static BaseType_t HandleIncomingPublishes( MQTTPacketInfo_t * pPacketInfo,
                                                MQTTPublishInfo_t * pIncomingPublishInfo,
                                                uint16_t packetIdentifier );
 
-/**
- * @brief Dispatch incoming publishes and ACKs to their various handler functions.
- *
- * @param[in] pMqttContext MQTT Context
- * @param[in] pPacketInfo Pointer to incoming packet.
- * @param[in] pDeserializedInfo Pointer to deserialized information from
- * the incoming packet.
- */
     static void mqttEventCallback( MQTTContext_t * pMqttContext,
                                    MQTTPacketInfo_t * pPacketInfo,
                                    MQTTDeserializedInfo_t * pDeserializedInfo );
 #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 
+
+
 #if ( mqttagentUSE_AGENT_TASK == 1 )
+    /*
+     * @brief Add the packet ID and task handle to an empty entry in the table.
+     *        These IDs and task handles are used to keep track of ACKs corresponding
+     *        to publishes.
+     *
+     * @param[in] xTaskHandle Task handle of the task which is waiting for an ACK for a
+     *                        sent publish.
+     * @param[in] usPacketID The packet ID of the publish.
+     */
     static BaseType_t AddToTable( TaskHandle_t xTaskHandle,
                                   uint16_t usPacketID )
     {
@@ -179,6 +170,16 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
+    /*-----------------------------------------------------------*/
+
+    /*
+     * @brief Find a packet ID in the table and if found, remove it.
+     *
+     * @param[in] The packet ID which is to be searched for.
+     *
+     * @return The task handle corresponding to the packet ID. If not
+     *         found, NULL is returned.
+     */
     static TaskHandle_t FindAndRemoveFromTable( uint16_t usPacketID )
     {
         int i;
@@ -200,16 +201,21 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
+    /*-----------------------------------------------------------*/
 
-    static BaseType_t HandleIncomingACKs( MQTTPacketInfo_t * pPacketInfo,
-                                          uint16_t packetIdentifier )
+    /*
+	 * @brief Handle the incoming ACKs by finding the task handle corresponding to
+	 *        the packet ID and notify the task that an ACK has been received.
+	 *
+	 * @param[in] packetIdentifier The packet ID of the incoming ACK.
+	 *
+	 * @return Returns pdPASS if the corresponding task was found and notified.
+	 *         Otherwise, pdFAIL is returned.
+	 */
+    static BaseType_t HandleIncomingACKs( uint16_t packetIdentifier )
     {
         TaskHandle_t xTaskToNotify;
         BaseType_t xReturn = pdFAIL;
-
-        /* Not using incoming packet information right now. Only the packet ID
-         * is required to match incoming ACKs with the publishes that were sent. */
-        ( void ) pPacketInfo;
 
         xTaskToNotify = FindAndRemoveFromTable( packetIdentifier );
 
@@ -229,6 +235,19 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
+    /*-----------------------------------------------------------*/
+
+    /*
+	 * @brief Add a queue handle to a node and add it to a linked list for the topic filter.
+	 *
+	 * @param[in] pSubscription Subscription information.
+	 * @param[in] uxQueue The queue handle which is to be added to the node.
+	 * @param[in] Node The pointer a Node data structure. This memory is owned by the
+	 *                 application.
+	 *
+	 * @return If the queue handle was added to a node successfully then a pdPASS is returned.
+	 *         Otherwise a pdFAIL is returned.
+	 */
     static BaseType_t AddQueueToSubscriptionList( const MQTTSubscribeInfo_t * pSubscription,
                                                   QueueHandle_t uxQueue,
                                                   Node_t * Node )
@@ -289,6 +308,17 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
+    /*-----------------------------------------------------------*/
+
+    /*
+     * @brief Send the incoming publish to all the queues in the linked list.
+     *
+     * @param[in] xList The lined list
+     * @param[in] pvPayload The incoming publish
+     * @param[in] uxPayloadLength The length of the incoming publish
+     *
+     * @return pdPASS is always returned
+     */
     static BaseType_t xSendToAllQueues( LinkedList_t xList,
                                         const void * pvPayload,
                                         size_t uxPayloadLength )
@@ -307,6 +337,18 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
+    /*-----------------------------------------------------------*/
+
+/**
+ * @brief Handle incoming publishes and dispatch them to various queues.
+ *
+ * @param[in] pPacketInfo The packet information data structure.
+ * @param[in] pIncomingPublishInfo Data about incoming publish.
+ * @param[in] packetIdentifier MQTT Packet ID.
+ *
+ * @return pdPASS is returned if the incoming publish's topic matches to
+ *         one of the linked lists. pdFAIL is returned otherwise.
+ */
     static BaseType_t HandleIncomingPublishes( MQTTPacketInfo_t * pPacketInfo,
                                                MQTTPublishInfo_t * pIncomingPublishInfo,
                                                uint16_t packetIdentifier )
@@ -339,11 +381,15 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
+    /*-----------------------------------------------------------*/
+
 /*
  * @brief The MQTT Agent task. This task is responsible for running the MQTT ProcessLoop
  *        command periodically. Ideally, this should be run only when there is data present
  *        in the socket to be read. However, the offloaded stack doesn't have one such
  *        function, thus, we have added a task delay.
+ *
+ * @param[in] pvParameters The MQTT context is passed in as a pointer to this task.
  */
     static void prvMQTTAgentTask( void * pvParameters )
     {
@@ -356,6 +402,9 @@ static volatile BaseType_t packetReceivedInLoop;
                 MQTTAgent_ProcessLoop( pContext, 0 );
             }
 
+            /* Ideally this should be a "block on a notification" from socket signaling that
+             * data is available to be read. However, the Inventek WiFi module doesn't have
+             * that functionality and thus an arbitrary delay had to be inserted. */
             vTaskDelay( pdMS_TO_TICKS( 8 ) );
         } while( 1 );
 
@@ -363,8 +412,18 @@ static volatile BaseType_t packetReceivedInLoop;
         LogInfo( ( "MQTT Agent task completed." ) );
         vTaskDelete( NULL );
     }
+
+    /*-----------------------------------------------------------*/
+
 #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 
+    /*
+     * @brief Callback for any incoming data. Such as ACK or a publish.
+     *
+     * @param[in] pMqttContext The global MQTT context
+     * @param[in] pPacketInfo Incoming packet's information
+     * @param[in] pDeserializedInfo Deserialized packet information
+     */
 static void mqttEventCallback( MQTTContext_t * pMqttContext,
                                MQTTPacketInfo_t * pPacketInfo,
                                MQTTDeserializedInfo_t * pDeserializedInfo )
@@ -399,7 +458,7 @@ static void mqttEventCallback( MQTTContext_t * pMqttContext,
                 case MQTT_PACKET_TYPE_PUBCOMP: /* QoS 2 command completion. */
                 case MQTT_PACKET_TYPE_SUBACK:
                 case MQTT_PACKET_TYPE_UNSUBACK:
-                    ( void ) HandleIncomingACKs( pPacketInfo, packetIdentifier );
+                    ( void ) HandleIncomingACKs( packetIdentifier );
                     break;
 
                 /* Nothing to do for these packets since they don't indicate command completion. */
@@ -418,6 +477,20 @@ static void mqttEventCallback( MQTTContext_t * pMqttContext,
     #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 }
 
+/*-----------------------------------------------------------*/
+
+    /*
+     * @brief Initialize the MQTT Agent
+     *
+     * @param[in] pContext A pointer to the global MQTT context
+     * @param[in] pTransportInterface The transport interface
+     * @param[in] getTimeFunction The function used to get current time
+     * @param[in] pNetworkBuffer The network buffer
+     * @param[in] uxMQTTAgentPriority The priority of the MQTT Agent task
+     *
+     * @return MQTTSuccess is returned in case the Agent is initialized
+     *         successfully. Otherwise an error is return.
+     */
 MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
                              const TransportInterface_t * pTransportInterface,
                              MQTTGetCurrentTimeFunc_t getTimeFunction,
@@ -482,10 +555,23 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
     return returnStatus;
 }
 
-/* Any task subscribing to a given topic will provide a queue in which to put the incoming publishes.
+/*-----------------------------------------------------------*/
+
+/*
+ * @brief Subscribe to a given topic filter.
  *
- * Also, since the library will not allocate any memory from the heap, the user has to provide memory
- * for a node in the linked list of the topic's subscribers.
+ * @param[in] pContext A pointer to the global MQTT context
+ * @param[in] pSubscription Subscription info for one topic filter
+ * @param[in] timeoutMs Maximum time in milliseconds that this function can
+ *                      block for. Provide portMAX_DELAY if you'd like this
+ *                      function to block forever.
+ * @param[in] uxQueue The handle to the queue to which the incoming publishes will
+ *                    be posted. Caller should create a queue and pass in the handle.
+ * @param[in] pNode A node which will be consumed by the agent to maintain a linked
+ *                  list. Caller should provide this memory to the agent.
+ *
+ * @return MQTTSuccess is returned in case the Agent is initialized
+ *         successfully. Otherwise an error is return.
  */
 MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
                                   const MQTTSubscribeInfo_t * pSubscription,
@@ -546,17 +632,19 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
 
 /*-----------------------------------------------------------*/
 
-MQTTStatus_t MQTTAgent_Unsubscribe( void )
-{
-    MQTTStatus_t statusReturn = MQTTBadParameter;
-
-    /* Implementation TBD. */
-
-    return statusReturn;
-}
-
-/*-----------------------------------------------------------*/
-
+/*
+ * @brief Publish to a given MQTT Agent topic
+ *
+ * @param[in] pContext A pointer to the global MQTT context
+ * @param[in] pPublishInfo Publish information
+ * @param[in] timeoutMs Maximum amount of time this function blocks.
+ *                      portMAX_DELAY should be passed if the call can be
+ *                      allowed to block forever. However this is not
+ *                      used currently.
+ *
+ * @return MQTTSuccess is returned in case the Agent is initialized
+ *         successfully. Otherwise an error is return.
+ */
 MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
                                 const MQTTPublishInfo_t * pPublishInfo,
                                 uint32_t timeoutMs )
@@ -598,6 +686,7 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
                 else
             #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
             {
+                /* If this is a QoS0 publish, then there is nothing more to be done. */
                 xSemaphoreGive( MQTTAgentMutex );
             }
         }
@@ -608,6 +697,15 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
 
 /*-----------------------------------------------------------*/
 
+/*
+ * @brief Call the MQTT Process loop till data is available in socket.
+ *
+ * @param[in] pContext A pointer to the global MQTT context
+ * @param[in] timeoutMs Maximum time this function can block. However this
+ *                      is not used currently.
+ *
+ * @return Return the value received from the MQTT_ProcessLoop function.
+ */
 MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
                                     uint32_t timeoutMs )
 {
@@ -633,6 +731,18 @@ MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
 
 /*-----------------------------------------------------------*/
 
+/*
+ * @brief Connect to the MQTT broker
+ *
+ * @param[in] pContext A pointer to the global MQTT context
+ * @param[in] pConnectInfo Information for connection
+ * @param[in] pWillInfo The last will and testament information
+ * @param[in] timeoutMs Maximum time this function can block. However this
+ *                      is not used currently.
+ * @param[in] pSessionPresent Is the session present
+ *
+ * @return Return the value received from the MQTT_Connect function.
+ */
 MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
                                 const MQTTConnectInfo_t * pConnectInfo,
                                 const MQTTPublishInfo_t * pWillInfo,
@@ -660,6 +770,23 @@ MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
 
 /*-----------------------------------------------------------*/
 
+/*
+ * @brief Unsubscribe from a given topic
+ */
+MQTTStatus_t MQTTAgent_Unsubscribe( void )
+{
+    MQTTStatus_t statusReturn = MQTTBadParameter;
+
+    /* Implementation TBD. */
+
+    return statusReturn;
+}
+
+/*-----------------------------------------------------------*/
+
+/*
+ * @brief Disconnect from the MQTT broker
+ */
 MQTTStatus_t MQTTAgent_Disconnect( void )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
@@ -675,6 +802,9 @@ MQTTStatus_t MQTTAgent_Disconnect( void )
 
 /*-----------------------------------------------------------*/
 
+/*
+ * @brief Ping the MQTT agent
+ */
 MQTTStatus_t MQTTAgent_Ping( void )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
@@ -686,6 +816,9 @@ MQTTStatus_t MQTTAgent_Ping( void )
 
 /*-----------------------------------------------------------*/
 
+/*
+ * @brief Terminate the MQTT Agent
+ */
 MQTTStatus_t MQTTAgent_Terminate( void )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;

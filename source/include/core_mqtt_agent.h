@@ -32,6 +32,7 @@
 #include "core_mqtt_state.h"
 
 #include "FreeRTOS.h"
+#include "semphr.h"
 #include "queue.h"
 
 /* Command messaging interface include. */
