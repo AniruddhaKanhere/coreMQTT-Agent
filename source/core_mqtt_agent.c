@@ -137,15 +137,16 @@ static volatile BaseType_t packetReceivedInLoop;
 
 
 #if ( mqttagentUSE_AGENT_TASK == 1 )
-    /*
-     * @brief Add the packet ID and task handle to an empty entry in the table.
-     *        These IDs and task handles are used to keep track of ACKs corresponding
-     *        to publishes.
-     *
-     * @param[in] xTaskHandle Task handle of the task which is waiting for an ACK for a
-     *                        sent publish.
-     * @param[in] usPacketID The packet ID of the publish.
-     */
+
+/*
+ * @brief Add the packet ID and task handle to an empty entry in the table.
+ *        These IDs and task handles are used to keep track of ACKs corresponding
+ *        to publishes.
+ *
+ * @param[in] xTaskHandle Task handle of the task which is waiting for an ACK for a
+ *                        sent publish.
+ * @param[in] usPacketID The packet ID of the publish.
+ */
     static BaseType_t AddToTable( TaskHandle_t xTaskHandle,
                                   uint16_t usPacketID )
     {
@@ -170,16 +171,16 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
-    /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
 
-    /*
-     * @brief Find a packet ID in the table and if found, remove it.
-     *
-     * @param[in] The packet ID which is to be searched for.
-     *
-     * @return The task handle corresponding to the packet ID. If not
-     *         found, NULL is returned.
-     */
+/*
+ * @brief Find a packet ID in the table and if found, remove it.
+ *
+ * @param[in] The packet ID which is to be searched for.
+ *
+ * @return The task handle corresponding to the packet ID. If not
+ *         found, NULL is returned.
+ */
     static TaskHandle_t FindAndRemoveFromTable( uint16_t usPacketID )
     {
         int i;
@@ -201,17 +202,17 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
-    /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
 
-    /*
-	 * @brief Handle the incoming ACKs by finding the task handle corresponding to
-	 *        the packet ID and notify the task that an ACK has been received.
-	 *
-	 * @param[in] packetIdentifier The packet ID of the incoming ACK.
-	 *
-	 * @return Returns pdPASS if the corresponding task was found and notified.
-	 *         Otherwise, pdFAIL is returned.
-	 */
+/*
+ * @brief Handle the incoming ACKs by finding the task handle corresponding to
+ *        the packet ID and notify the task that an ACK has been received.
+ *
+ * @param[in] packetIdentifier The packet ID of the incoming ACK.
+ *
+ * @return Returns pdPASS if the corresponding task was found and notified.
+ *         Otherwise, pdFAIL is returned.
+ */
     static BaseType_t HandleIncomingACKs( uint16_t packetIdentifier )
     {
         TaskHandle_t xTaskToNotify;
@@ -235,19 +236,19 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
-    /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
 
-    /*
-	 * @brief Add a queue handle to a node and add it to a linked list for the topic filter.
-	 *
-	 * @param[in] pSubscription Subscription information.
-	 * @param[in] uxQueue The queue handle which is to be added to the node.
-	 * @param[in] Node The pointer a Node data structure. This memory is owned by the
-	 *                 application.
-	 *
-	 * @return If the queue handle was added to a node successfully then a pdPASS is returned.
-	 *         Otherwise a pdFAIL is returned.
-	 */
+/*
+ * @brief Add a queue handle to a node and add it to a linked list for the topic filter.
+ *
+ * @param[in] pSubscription Subscription information.
+ * @param[in] uxQueue The queue handle which is to be added to the node.
+ * @param[in] Node The pointer a Node data structure. This memory is owned by the
+ *                 application.
+ *
+ * @return If the queue handle was added to a node successfully then a pdPASS is returned.
+ *         Otherwise a pdFAIL is returned.
+ */
     static BaseType_t AddQueueToSubscriptionList( const MQTTSubscribeInfo_t * pSubscription,
                                                   QueueHandle_t uxQueue,
                                                   Node_t * Node )
@@ -308,17 +309,17 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
-    /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
 
-    /*
-     * @brief Send the incoming publish to all the queues in the linked list.
-     *
-     * @param[in] xList The lined list
-     * @param[in] pvPayload The incoming publish
-     * @param[in] uxPayloadLength The length of the incoming publish
-     *
-     * @return pdPASS is always returned
-     */
+/*
+ * @brief Send the incoming publish to all the queues in the linked list.
+ *
+ * @param[in] xList The lined list
+ * @param[in] pvPayload The incoming publish
+ * @param[in] uxPayloadLength The length of the incoming publish
+ *
+ * @return pdPASS is always returned
+ */
     static BaseType_t xSendToAllQueues( LinkedList_t xList,
                                         const void * pvPayload,
                                         size_t uxPayloadLength )
@@ -337,7 +338,7 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
-    /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
 
 /**
  * @brief Handle incoming publishes and dispatch them to various queues.
@@ -381,7 +382,7 @@ static volatile BaseType_t packetReceivedInLoop;
         return xReturn;
     }
 
-    /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
 
 /*
  * @brief The MQTT Agent task. This task is responsible for running the MQTT ProcessLoop
@@ -413,17 +414,17 @@ static volatile BaseType_t packetReceivedInLoop;
         vTaskDelete( NULL );
     }
 
-    /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
 
 #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
 
-    /*
-     * @brief Callback for any incoming data. Such as ACK or a publish.
-     *
-     * @param[in] pMqttContext The global MQTT context
-     * @param[in] pPacketInfo Incoming packet's information
-     * @param[in] pDeserializedInfo Deserialized packet information
-     */
+/*
+ * @brief Callback for any incoming data. Such as ACK or a publish.
+ *
+ * @param[in] pMqttContext The global MQTT context
+ * @param[in] pPacketInfo Incoming packet's information
+ * @param[in] pDeserializedInfo Deserialized packet information
+ */
 static void mqttEventCallback( MQTTContext_t * pMqttContext,
                                MQTTPacketInfo_t * pPacketInfo,
                                MQTTDeserializedInfo_t * pDeserializedInfo )
@@ -479,18 +480,18 @@ static void mqttEventCallback( MQTTContext_t * pMqttContext,
 
 /*-----------------------------------------------------------*/
 
-    /*
-     * @brief Initialize the MQTT Agent
-     *
-     * @param[in] pContext A pointer to the global MQTT context
-     * @param[in] pTransportInterface The transport interface
-     * @param[in] getTimeFunction The function used to get current time
-     * @param[in] pNetworkBuffer The network buffer
-     * @param[in] uxMQTTAgentPriority The priority of the MQTT Agent task
-     *
-     * @return MQTTSuccess is returned in case the Agent is initialized
-     *         successfully. Otherwise an error is return.
-     */
+/*
+ * @brief Initialize the MQTT Agent
+ *
+ * @param[in] pContext A pointer to the global MQTT context
+ * @param[in] pTransportInterface The transport interface
+ * @param[in] getTimeFunction The function used to get current time
+ * @param[in] pNetworkBuffer The network buffer
+ * @param[in] uxMQTTAgentPriority The priority of the MQTT Agent task
+ *
+ * @return MQTTSuccess is returned in case the Agent is initialized
+ *         successfully. Otherwise an error is return.
+ */
 MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
                              const TransportInterface_t * pTransportInterface,
                              MQTTGetCurrentTimeFunc_t getTimeFunction,
