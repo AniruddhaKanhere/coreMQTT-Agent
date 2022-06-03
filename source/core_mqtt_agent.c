@@ -157,11 +157,11 @@ static volatile BaseType_t packetReceivedInLoop;
 
         for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
         {
-        	/* Cleanup any stale entries. */
-        	if( AgentTable[ i ].usStale == pdTRUE )
-        	{
-        		memset( &AgentTable[ i ], 0x00, sizeof( TaskTable_t ) );
-        	}
+            /* Cleanup any stale entries. */
+            if( AgentTable[ i ].usStale == pdTRUE )
+            {
+                memset( &AgentTable[ i ], 0x00, sizeof( TaskTable_t ) );
+            }
 
             if( AgentTable[ i ].xTaskHandle == NULL )
             {
@@ -197,12 +197,12 @@ static volatile BaseType_t packetReceivedInLoop;
 
         for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
         {
-        	/* Cleanup any stale entries before attempting to find out a task
-        	 * handle corresponding to a packet ID. */
-			if( AgentTable[ i ].usStale == pdTRUE )
-			{
-				memset( &AgentTable[ i ], 0x00, sizeof( TaskTable_t ) );
-			}
+            /* Cleanup any stale entries before attempting to find out a task
+             * handle corresponding to a packet ID. */
+            if( AgentTable[ i ].usStale == pdTRUE )
+            {
+                memset( &AgentTable[ i ], 0x00, sizeof( TaskTable_t ) );
+            }
 
             if( AgentTable[ i ].usPacketID == usPacketID )
             {
@@ -227,22 +227,22 @@ static volatile BaseType_t packetReceivedInLoop;
  * @param[in] usPacketID packet ID corresponding to the entry to be
  *            marked stale.
  */
-static void vMarkStaleEntry( uint16_t usPacketID )
-{
-	int i;
+    static void vMarkStaleEntry( uint16_t usPacketID )
+    {
+        int i;
 
-	for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
-	{
-		/* Find and mark the stale entry. */
-		if( AgentTable[ i ].usPacketID == usPacketID )
-		{
-			/* The stale entry will be removed while adding or
-			 * removing from the table. */
-			AgentTable[ i ].usStale = pdTRUE;
-			break;
-		}
-	}
-}
+        for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
+        {
+            /* Find and mark the stale entry. */
+            if( AgentTable[ i ].usPacketID == usPacketID )
+            {
+                /* The stale entry will be removed while adding or
+                 * removing from the table. */
+                AgentTable[ i ].usStale = pdTRUE;
+                break;
+            }
+        }
+    }
 
 /*-----------------------------------------------------------*/
 
@@ -620,7 +620,7 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
  */
 MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
                                   const MQTTSubscribeInfo_t * pSubscription,
-								  TickType_t timeoutMs,
+                                  TickType_t timeoutMs,
                                   QueueHandle_t uxQueue,
                                   void * pNode )
 {
@@ -641,11 +641,11 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
     #if ( mqttagentUSE_AGENT_TASK == 1 )
         if( xSemaphoreTake( MQTTAgentMutex, xTicksToWait ) == pdPASS )
         {
-        	usPacketId = MQTT_GetPacketId( pContext );
+            usPacketId = MQTT_GetPacketId( pContext );
             statusReturn = MQTT_Subscribe( pContext,
                                            pSubscription,
                                            1,
-										   usPacketId );
+                                           usPacketId );
 
             if( statusReturn == MQTTSuccess )
             {
@@ -661,18 +661,18 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
                 if( xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait ) == pdFALSE )
                 {
                     ulReturn = ulTaskNotifyTake( pdTRUE,
-                	    	                     xTicksToWait );
+                                                 xTicksToWait );
                 }
 
                 if( ulReturn == pdFALSE )
-				{
-					LogWarn( ( "Timeout while waiting for a SUBACK" ) );
+                {
+                    LogWarn( ( "Timeout while waiting for a SUBACK" ) );
 
-					/* Mark the ACK entry as stale. */
-					vMarkStaleEntry( usPacketId );
+                    /* Mark the ACK entry as stale. */
+                    vMarkStaleEntry( usPacketId );
 
-					statusReturn = MQTTKeepAliveTimeout;
-				}
+                    statusReturn = MQTTKeepAliveTimeout;
+                }
             }
         }
         else
@@ -702,7 +702,7 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
  */
 MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
                                 const MQTTPublishInfo_t * pPublishInfo,
-								const MQTTAgentCommandInfo_t * pCommandInfo )
+                                const MQTTAgentCommandInfo_t * pCommandInfo )
 {
     MQTTStatus_t statusReturn = MQTTKeepAliveTimeout;
     uint16_t usPacketID;
@@ -726,11 +726,12 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
 
         /* Add the entry to table in case of a successful QoS1 publish. */
         xSuccessWithQoS1 = ( statusReturn == MQTTSuccess ) && ( pPublishInfo->qos != MQTTQoS0 );
+
         if( xSuccessWithQoS1 != pdFALSE )
-		{
-        	/* Adding to the table must happen before releasing semaphore. */
-			AddToTable( xTaskGetCurrentTaskHandle(), usPacketID );
-		}
+        {
+            /* Adding to the table must happen before releasing semaphore. */
+            AddToTable( xTaskGetCurrentTaskHandle(), usPacketID );
+        }
 
         /* Return the semaphore. Following operations can happen without holding
          * the semaphore. */
@@ -738,26 +739,26 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
 
         /* If the QoS1 publish was sent successfully, then wait for the ACK. */
         if( xSuccessWithQoS1 != pdFALSE )
-		{
-			xIsTimeOut = xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait );
+        {
+            xIsTimeOut = xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait );
 
-			/* Check for timeout. */
-			if( xIsTimeOut == pdFALSE )
-			{
-				ulReturn = ulTaskNotifyTake( pdTRUE,
-											 xTicksToWait );
-			}
+            /* Check for timeout. */
+            if( xIsTimeOut == pdFALSE )
+            {
+                ulReturn = ulTaskNotifyTake( pdTRUE,
+                                             xTicksToWait );
+            }
 
-			if( ( xIsTimeOut == pdTRUE ) || ( ulReturn == pdFALSE ) )
-			{
-				LogWarn( ( "Timeout while waiting for a PUBACK" ) );
+            if( ( xIsTimeOut == pdTRUE ) || ( ulReturn == pdFALSE ) )
+            {
+                LogWarn( ( "Timeout while waiting for a PUBACK" ) );
 
-				/* Mark the ACK entry as stale. */
-				vMarkStaleEntry( usPacketID );
+                /* Mark the ACK entry as stale. */
+                vMarkStaleEntry( usPacketID );
 
-				statusReturn = MQTTKeepAliveTimeout;
-			}
-		}
+                statusReturn = MQTTKeepAliveTimeout;
+            }
+        }
     }
 
     return statusReturn;
@@ -774,7 +775,7 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
  * @return Return the value received from the MQTT_ProcessLoop function.
  */
 MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
-		                            TickType_t timeoutMs )
+                                    TickType_t timeoutMs )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
     TimeOut_t xTimeOut;
@@ -792,9 +793,10 @@ MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
 
             statusReturn = MQTT_ProcessLoop( pContext,
                                              0 );
+
             if( xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait ) == pdTRUE )
             {
-            	break;
+                break;
             }
         } while( packetReceivedInLoop == true );
 
@@ -821,7 +823,7 @@ MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
 MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
                                 const MQTTConnectInfo_t * pConnectInfo,
                                 const MQTTPublishInfo_t * pWillInfo,
-								TickType_t timeoutMs,
+                                TickType_t timeoutMs,
                                 bool * pSessionPresent )
 {
     MQTTStatus_t statusReturn = MQTTKeepAliveTimeout;
