@@ -54,7 +54,7 @@
 #define mqttagentTOPIC_LENGTH      20
 #define mqttagentMAX_TOPICS        5
 
-#define mqttagentSTACK_SIZE        600
+#define mqttagentSTACK_SIZE        800
 
 #define mqttagentUSE_AGENT_TASK    1
 
@@ -62,6 +62,7 @@ typedef struct xTaskTable
 {
     TaskHandle_t xTaskHandle;
     uint16_t usPacketID;
+    uint16_t usStale;
 } TaskTable_t;
 
 typedef struct xNode
@@ -118,6 +119,7 @@ static volatile BaseType_t packetReceivedInLoop;
 
     static TaskHandle_t FindAndRemoveFromTable( uint16_t usPacketID );
 
+    static void vMarkStaleEntry( uint16_t usPacketID );
 
     static BaseType_t HandleIncomingACKs( uint16_t packetIdentifier );
 
@@ -155,10 +157,17 @@ static volatile BaseType_t packetReceivedInLoop;
 
         for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
         {
+        	/* Cleanup any stale entries. */
+        	if( AgentTable[ i ].usStale == pdTRUE )
+        	{
+        		memset( &AgentTable[ i ], 0x00, sizeof( TaskTable_t ) );
+        	}
+
             if( AgentTable[ i ].xTaskHandle == NULL )
             {
                 AgentTable[ i ].xTaskHandle = xTaskHandle;
                 AgentTable[ i ].usPacketID = usPacketID;
+                AgentTable[ i ].usStale = pdFALSE;
                 break;
             }
         }
@@ -188,12 +197,20 @@ static volatile BaseType_t packetReceivedInLoop;
 
         for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
         {
+        	/* Cleanup any stale entries before attempting to find out a task
+        	 * handle corresponding to a packet ID. */
+			if( AgentTable[ i ].usStale == pdTRUE )
+			{
+				memset( &AgentTable[ i ], 0x00, sizeof( TaskTable_t ) );
+			}
+
             if( AgentTable[ i ].usPacketID == usPacketID )
             {
                 xReturn = AgentTable[ i ].xTaskHandle;
 
                 AgentTable[ i ].xTaskHandle = NULL;
                 AgentTable[ i ].usPacketID = 0;
+                AgentTable[ i ].usStale = pdFALSE;
 
                 break;
             }
@@ -201,6 +218,31 @@ static volatile BaseType_t packetReceivedInLoop;
 
         return xReturn;
     }
+
+/*-----------------------------------------------------------*/
+
+/*
+ * @brief Mark the entry in the ACK table as stale.
+ *
+ * @param[in] usPacketID packet ID corresponding to the entry to be
+ *            marked stale.
+ */
+static void vMarkStaleEntry( uint16_t usPacketID )
+{
+	int i;
+
+	for( i = 0; i < AGENT_OUTSTANDING_MSGS; i++ )
+	{
+		/* Find and mark the stale entry. */
+		if( AgentTable[ i ].usPacketID == usPacketID )
+		{
+			/* The stale entry will be removed while adding or
+			 * removing from the table. */
+			AgentTable[ i ].usStale = pdTRUE;
+			break;
+		}
+	}
+}
 
 /*-----------------------------------------------------------*/
 
@@ -358,6 +400,8 @@ static volatile BaseType_t packetReceivedInLoop;
         bool IsMatching;
         UBaseType_t i;
 
+        ( void ) pPacketInfo;
+
         for( i = 0; i < mqttagentMAX_TOPICS; i++ )
         {
             if( AgentLinkedLists[ i ].pucTopic[ 0 ] != '\0' )
@@ -400,7 +444,7 @@ static volatile BaseType_t packetReceivedInLoop;
         {
             if( xConnected == pdTRUE )
             {
-                MQTTAgent_ProcessLoop( pContext, 0 );
+                MQTTAgent_ProcessLoop( pContext, portMAX_DELAY );
             }
 
             /* Ideally this should be a "block on a notification" from socket signaling that
@@ -576,28 +620,32 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
  */
 MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
                                   const MQTTSubscribeInfo_t * pSubscription,
-                                  uint32_t timeoutMs,
+								  TickType_t timeoutMs,
                                   QueueHandle_t uxQueue,
                                   void * pNode )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
-    uint16_t packetId;
-    uint32_t ulReturn;
-
-    /* Timeout is not used right now */
-    ( void ) timeoutMs;
+    uint16_t usPacketId;
+    uint32_t ulReturn = pdFALSE;
+    TimeOut_t xTimeOut;
+    TickType_t xTicksToWait = pdMS_TO_TICKS( timeoutMs );
 
     configASSERT( uxQueue != NULL );
     configASSERT( pNode != NULL );
 
+    /* Initialize xTimeOut. This records the time at which this function was
+     * entered. */
+    vTaskSetTimeOutState( &xTimeOut );
+
+
     #if ( mqttagentUSE_AGENT_TASK == 1 )
-        if( xSemaphoreTake( MQTTAgentMutex, portMAX_DELAY ) == pdPASS )
+        if( xSemaphoreTake( MQTTAgentMutex, xTicksToWait ) == pdPASS )
         {
-            packetId = MQTT_GetPacketId( pContext );
+        	usPacketId = MQTT_GetPacketId( pContext );
             statusReturn = MQTT_Subscribe( pContext,
                                            pSubscription,
                                            1,
-                                           packetId );
+										   usPacketId );
 
             if( statusReturn == MQTTSuccess )
             {
@@ -605,19 +653,26 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
                                             uxQueue,
                                             ( Node_t * ) pNode );
 
-                AddToTable( xTaskGetCurrentTaskHandle(), packetId );
+                AddToTable( xTaskGetCurrentTaskHandle(), usPacketId );
 
                 xSemaphoreGive( MQTTAgentMutex );
 
-                ulReturn = ulTaskNotifyTake( pdTRUE,
-                                             portMAX_DELAY );
-
-                configASSERT( ulReturn == agentINCOMING_ACK );
-
-                if( ulReturn != agentINCOMING_ACK )
+                /* Check for timeout. */
+                if( xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait ) == pdFALSE )
                 {
-                    LogError( ( "Unexpected notification to the task. %d\n", ulReturn ) );
+                    ulReturn = ulTaskNotifyTake( pdTRUE,
+                	    	                     xTicksToWait );
                 }
+
+                if( ulReturn == pdFALSE )
+				{
+					LogWarn( ( "Timeout while waiting for a SUBACK" ) );
+
+					/* Mark the ACK entry as stale. */
+					vMarkStaleEntry( usPacketId );
+
+					statusReturn = MQTTKeepAliveTimeout;
+				}
             }
         }
         else
@@ -640,23 +695,27 @@ MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
  * @param[in] pPublishInfo Publish information
  * @param[in] timeoutMs Maximum amount of time this function blocks.
  *                      portMAX_DELAY should be passed if the call can be
- *                      allowed to block forever. However this is not
- *                      used currently.
+ *                      allowed to block forever.
  *
  * @return MQTTSuccess is returned in case the Agent is initialized
  *         successfully. Otherwise an error is return.
  */
 MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
                                 const MQTTPublishInfo_t * pPublishInfo,
-                                uint32_t timeoutMs )
+								const MQTTAgentCommandInfo_t * pCommandInfo )
 {
     MQTTStatus_t statusReturn = MQTTKeepAliveTimeout;
     uint16_t usPacketID;
     uint32_t ulReturn;
+    TimeOut_t xTimeOut;
+    TickType_t xTicksToWait = pdMS_TO_TICKS( pCommandInfo->blockTimeMs );
+    BaseType_t xIsTimeOut, xSuccessWithQoS1;
 
-    ( void ) timeoutMs;
+    /* Initialize xTimeOut. This records the time at which this function was
+     * entered. */
+    vTaskSetTimeOutState( &xTimeOut );
 
-    if( xSemaphoreTake( MQTTAgentMutex, portMAX_DELAY ) == pdPASS )
+    if( xSemaphoreTake( MQTTAgentMutex, xTicksToWait ) == pdPASS )
     {
         if( pPublishInfo->qos != MQTTQoS0 )
         {
@@ -665,32 +724,40 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
 
         statusReturn = MQTT_Publish( pContext, pPublishInfo, usPacketID );
 
-        if( statusReturn == MQTTSuccess )
-        {
-            #if ( mqttagentUSE_AGENT_TASK == 1 )
-                if( pPublishInfo->qos != MQTTQoS0 )
-                {
-                    AddToTable( xTaskGetCurrentTaskHandle(), usPacketID );
+        /* Add the entry to table in case of a successful QoS1 publish. */
+        xSuccessWithQoS1 = ( statusReturn == MQTTSuccess ) && ( pPublishInfo->qos != MQTTQoS0 );
+        if( xSuccessWithQoS1 != pdFALSE )
+		{
+        	/* Adding to the table must happen before releasing semaphore. */
+			AddToTable( xTaskGetCurrentTaskHandle(), usPacketID );
+		}
 
-                    xSemaphoreGive( MQTTAgentMutex );
+        /* Return the semaphore. Following operations can happen without holding
+         * the semaphore. */
+        ( void ) xSemaphoreGive( MQTTAgentMutex );
 
-                    ulReturn = ulTaskNotifyTake( pdTRUE,
-                                                 portMAX_DELAY );
+        /* If the QoS1 publish was sent successfully, then wait for the ACK. */
+        if( xSuccessWithQoS1 != pdFALSE )
+		{
+			xIsTimeOut = xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait );
 
-                    configASSERT( ulReturn == agentINCOMING_ACK );
+			/* Check for timeout. */
+			if( xIsTimeOut == pdFALSE )
+			{
+				ulReturn = ulTaskNotifyTake( pdTRUE,
+											 xTicksToWait );
+			}
 
-                    if( ulReturn != agentINCOMING_ACK )
-                    {
-                        LogError( ( "Unexpected notification to the task. %d\n", ulReturn ) );
-                    }
-                }
-                else
-            #endif /* if ( mqttagentUSE_AGENT_TASK == 1 ) */
-            {
-                /* If this is a QoS0 publish, then there is nothing more to be done. */
-                xSemaphoreGive( MQTTAgentMutex );
-            }
-        }
+			if( ( xIsTimeOut == pdTRUE ) || ( ulReturn == pdFALSE ) )
+			{
+				LogWarn( ( "Timeout while waiting for a PUBACK" ) );
+
+				/* Mark the ACK entry as stale. */
+				vMarkStaleEntry( usPacketID );
+
+				statusReturn = MQTTKeepAliveTimeout;
+			}
+		}
     }
 
     return statusReturn;
@@ -702,19 +769,22 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
  * @brief Call the MQTT Process loop till data is available in socket.
  *
  * @param[in] pContext A pointer to the global MQTT context
- * @param[in] timeoutMs Maximum time this function can block. However this
- *                      is not used currently.
+ * @param[in] timeoutMs Maximum time this function can block.
  *
  * @return Return the value received from the MQTT_ProcessLoop function.
  */
 MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
-                                    uint32_t timeoutMs )
+		                            TickType_t timeoutMs )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
+    TimeOut_t xTimeOut;
+    TickType_t xTicksToWait = pdMS_TO_TICKS( timeoutMs );
 
-    ( void ) timeoutMs;
+    /* Initialize xTimeOut. This records the time at which this function was
+     * entered. */
+    vTaskSetTimeOutState( &xTimeOut );
 
-    if( xSemaphoreTake( MQTTAgentMutex, portMAX_DELAY ) == pdPASS )
+    if( xSemaphoreTake( MQTTAgentMutex, xTicksToWait ) == pdPASS )
     {
         do
         {
@@ -722,6 +792,10 @@ MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
 
             statusReturn = MQTT_ProcessLoop( pContext,
                                              0 );
+            if( xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait ) == pdTRUE )
+            {
+            	break;
+            }
         } while( packetReceivedInLoop == true );
 
         xSemaphoreGive( MQTTAgentMutex );
@@ -747,7 +821,7 @@ MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
 MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
                                 const MQTTConnectInfo_t * pConnectInfo,
                                 const MQTTPublishInfo_t * pWillInfo,
-                                uint32_t timeoutMs,
+								TickType_t timeoutMs,
                                 bool * pSessionPresent )
 {
     MQTTStatus_t statusReturn = MQTTKeepAliveTimeout;

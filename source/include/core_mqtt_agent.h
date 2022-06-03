@@ -72,6 +72,15 @@
 
 /*-----------------------------------------------------------*/
 
+/**
+ * @ingroup mqtt_agent_struct_types
+ * @brief Struct holding arguments that are common to every command.
+ */
+typedef struct MQTTAgentCommandInfo
+{
+    TickType_t blockTimeMs;                                    /**< @brief Maximum block time for enqueueing the command. */
+} MQTTAgentCommandInfo_t;
+
 typedef struct xMQTTAgentNode
 {
     void * pvDummy[ 2 ];
@@ -232,7 +241,7 @@ MQTTStatus_t MQTTAgent_Init( MQTTContext_t * pContext,
 /* @[declare_mqtt_agent_subscribe] */
 MQTTStatus_t MQTTAgent_Subscribe( MQTTContext_t * pContext,
                                   const MQTTSubscribeInfo_t * pSubscription,
-                                  uint32_t timeoutMs,
+								  TickType_t timeoutMs,
                                   QueueHandle_t uxQueue,
                                   void * Node );
 /* @[declare_mqtt_agent_subscribe] */
@@ -352,7 +361,7 @@ MQTTStatus_t MQTTAgent_Unsubscribe( void );
 /* @[declare_mqtt_agent_publish] */
 MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
                                 const MQTTPublishInfo_t * pPublishInfo,
-                                uint32_t timeoutMs );
+								const MQTTAgentCommandInfo_t * pCommandInfo );
 /* @[declare_mqtt_agent_publish] */
 
 /**
@@ -402,7 +411,7 @@ MQTTStatus_t MQTTAgent_Publish( MQTTContext_t * pContext,
  */
 /* @[declare_mqtt_agent_processloop] */
 MQTTStatus_t MQTTAgent_ProcessLoop( MQTTContext_t * pContext,
-                                    uint32_t timeoutMs );
+		TickType_t timeoutMs );
 /* @[declare_mqtt_agent_processloop] */
 
 /**
@@ -552,7 +561,7 @@ MQTTStatus_t MQTTAgent_Ping( void );
 MQTTStatus_t MQTTAgent_Connect( MQTTContext_t * pContext,
                                 const MQTTConnectInfo_t * pConnectInfo,
                                 const MQTTPublishInfo_t * pWillInfo,
-                                uint32_t timeoutMs,
+								TickType_t timeoutMs,
                                 bool * pSessionPresent );
 /* @[declare_mqtt_agent_connect] */
 
