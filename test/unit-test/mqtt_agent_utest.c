@@ -708,10 +708,12 @@ void test_MQTTAgent_ResumeSession_failed_publish( void )
     MQTTStatus_t mqttStatus;
     MQTTAgentContext_t mqttAgentContext;
     MQTTAgentCommand_t command = { 0 };
-    MQTTPublishInfo_t args = { 0 };
+    MQTTAgentPublishArgs_t args = { 0 };
+    MQTTPublishInfo_t publishInfo = { 0 };
 
     setupAgentContext( &mqttAgentContext );
 
+    args.pPublishInfo = &publishInfo;
     command.pArgs = &args;
     mqttAgentContext.pPendingAcks[ 0 ].packetId = 1U;
     mqttAgentContext.pPendingAcks[ 0 ].pOriginalCommand = &command;
@@ -728,11 +730,13 @@ void test_MQTTAgent_ResumeSession_publish_resend_success( void )
     MQTTStatus_t mqttStatus;
     MQTTAgentContext_t mqttAgentContext;
     MQTTAgentCommand_t command = { 0 };
-    MQTTPublishInfo_t args = { 0 };
+    MQTTAgentPublishArgs_t args = { 0 };
+    MQTTPublishInfo_t publishInfo = { 0 };
     MQTTAgentAckInfo_t ackInfo;
 
     setupAgentContext( &mqttAgentContext );
 
+    args.pPublishInfo = &publishInfo;
     command.pArgs = &args;
 
     ackInfo.packetId = 1U;
@@ -1020,17 +1024,6 @@ void test_MQTTAgent_Publish_Invalid_Parameters( void )
 
     mqttStatus = MQTTAgent_Publish( &agentContext, &publishArgs, NULL );
     TEST_ASSERT_EQUAL( MQTTBadParameter, mqttStatus );
-
-    /* This needs to be large enough to hold the PUBLISH:
-     * 1 byte: control header
-     * 1 byte: remaining length
-     * 2 bytes: topic name length
-     * 1+ bytes: topic name.
-     * For this test case, the buffer must have size at least
-     * 1+1+2+4=8. */
-    agentContext.mqttContext.networkBuffer.size = 6;
-    mqttStatus = MQTTAgent_Publish( &agentContext, &publishArgs, &commandInfo );
-    TEST_ASSERT_EQUAL( MQTTBadParameter, mqttStatus );
 }
 
 /**
@@ -1085,7 +1078,7 @@ void test_MQTTAgent_Publish_success( void )
     MQTTAgentCommandInfo_t commandInfo = { 0 };
     MQTTAgentCommand_t command = { 0 };
     MQTTPublishInfo_t publishInfo = { 0 };
-    MQTTAgentPublishArgs_t publishArgs = { .pPublishInfo = &publishInfo };
+    MQTTAgentPublishArgs_t publishArgs = { 0 };
 
     setupAgentContext( &agentContext );
     pCommandToReturn = &command;
@@ -1094,19 +1087,12 @@ void test_MQTTAgent_Publish_success( void )
     publishInfo.pTopicName = "test";
     publishInfo.topicNameLength = 4;
 
-    /* This needs to be large enough to hold the PUBLISH:
-     * 1 byte: control header
-     * 1 byte: remaining length
-     * 2 bytes: topic name length
-     * 1+ bytes: topic name.
-     * For this test case, the buffer must have size at least
-     * 1+1+2+4=8. */
-    agentContext.mqttContext.networkBuffer.size = 10;
+    publishArgs.pPublishInfo = &publishInfo;
     mqttStatus = MQTTAgent_Publish( &agentContext, &publishArgs, &commandInfo );
     TEST_ASSERT_EQUAL( MQTTSuccess, mqttStatus );
     TEST_ASSERT_EQUAL_PTR( &command, globalMessageContext.pSentCommand );
     TEST_ASSERT_EQUAL( PUBLISH, command.commandType );
-    TEST_ASSERT_EQUAL_PTR( &publishInfo, command.pArgs );
+    TEST_ASSERT_EQUAL_PTR( &publishArgs, command.pArgs );
     TEST_ASSERT_EQUAL_PTR( stubCompletionCallback, command.pCommandCompleteCallback );
 }
 
