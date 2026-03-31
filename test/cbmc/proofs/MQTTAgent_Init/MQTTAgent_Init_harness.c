@@ -38,11 +38,18 @@ void harness()
     pNetworkBuffer = malloc( sizeof( MQTTFixedBuffer_t ) );
     pTransportInterface = malloc( sizeof( TransportInterface_t ) );
 
+    uint8_t * pAckPropsBuffer;
+    size_t ackPropsBufferSize;
+
+    pAckPropsBuffer = malloc( ackPropsBufferSize );
+
     MQTTAgent_Init( pMqttAgentContext,
                     pMsgInterface,
                     pNetworkBuffer,
                     pTransportInterface,
                     getCurrentTimeMs,
                     incomingCallback,
-                    pIncomingPacketContext );
+                    pIncomingPacketContext,
+                    pAckPropsBuffer,
+                    ackPropsBufferSize );
 }

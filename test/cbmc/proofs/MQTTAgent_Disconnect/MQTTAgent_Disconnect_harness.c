@@ -28,13 +28,16 @@
 void harness()
 {
     MQTTAgentContext_t * pMqttAgentContext;
+    MQTTAgentDisconnectArgs_t * pDisconnectArgs;
     MQTTAgentCommandInfo_t * pCommandInfo;
 
     pMqttAgentContext = allocateMqttAgentContext( NULL );
     __CPROVER_assume( isValidMqttAgentContext( pMqttAgentContext ) );
 
+    pDisconnectArgs = malloc( sizeof( MQTTAgentDisconnectArgs_t ) );
     pCommandInfo = malloc( sizeof( MQTTAgentCommandInfo_t ) );
 
     MQTTAgent_Disconnect( pMqttAgentContext,
+                          pDisconnectArgs,
                           pCommandInfo );
 }

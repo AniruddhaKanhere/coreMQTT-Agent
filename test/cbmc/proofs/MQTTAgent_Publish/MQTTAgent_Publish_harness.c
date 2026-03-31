@@ -28,22 +28,24 @@
 void harness()
 {
     MQTTAgentContext_t * pMqttAgentContext;
-    MQTTPublishInfo_t * pPublishInfo;
+    MQTTAgentPublishArgs_t * pPublishArgs;
     MQTTAgentCommandInfo_t * pCommandInfo;
     MQTTStatus_t mqttStatus;
 
     pMqttAgentContext = allocateMqttAgentContext( NULL );
     __CPROVER_assume( isValidMqttAgentContext( pMqttAgentContext ) );
 
-    /* MQTTAgentCommandInfo and MQTTPublishInfo_t are only added to Queue
-     * in MQTTAgent_Publish and non deterministic values for the
-     * members of MQTTAgentCommandInfo_t and MQTTPublishInfo_t type will be
-     * sufficient for this proof.*/
-    pPublishInfo = malloc( sizeof( MQTTPublishInfo_t ) );
+    pPublishArgs = malloc( sizeof( MQTTAgentPublishArgs_t ) );
+
+    if( pPublishArgs != NULL )
+    {
+        pPublishArgs->pPublishInfo = malloc( sizeof( MQTTPublishInfo_t ) );
+    }
+
     pCommandInfo = malloc( sizeof( MQTTAgentCommandInfo_t ) );
 
     mqttStatus = MQTTAgent_Publish( pMqttAgentContext,
-                                    pPublishInfo,
+                                    pPublishArgs,
                                     pCommandInfo );
 
     __CPROVER_assert( isAgentSendCommandFunctionStatus( mqttStatus ), "The return value is a MQTTStatus_t." );

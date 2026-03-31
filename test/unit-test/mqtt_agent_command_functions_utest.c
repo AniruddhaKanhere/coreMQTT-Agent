@@ -186,15 +186,16 @@ void test_MQTTAgentCommand_Publish_QoS0_success( void )
 {
     MQTTAgentContext_t mqttAgentContext = { 0 };
     MQTTPublishInfo_t publishInfo = { 0 };
+    MQTTAgentPublishArgs_t publishArgs = { .pPublishInfo = &publishInfo };
     MQTTAgentCommandFuncReturns_t returnFlags = { 0 };
     MQTTStatus_t mqttStatus;
 
     /* Initializing QOS. */
     publishInfo.qos = MQTTQoS0;
 
-    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 0, MQTTSuccess );
+    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 0, NULL, MQTTSuccess );
 
-    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishInfo, &returnFlags );
+    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSuccess, mqttStatus );
     /* Ensure that returnFlags are set as intended. */
@@ -211,6 +212,7 @@ void test_MQTTAgentCommand_Publish_QoS1_success( void )
 {
     MQTTAgentContext_t mqttAgentContext = { 0 };
     MQTTPublishInfo_t publishInfo = { 0 };
+    MQTTAgentPublishArgs_t publishArgs = { .pPublishInfo = &publishInfo };
     MQTTAgentCommandFuncReturns_t returnFlags = { 0 };
     MQTTStatus_t mqttStatus;
 
@@ -218,9 +220,9 @@ void test_MQTTAgentCommand_Publish_QoS1_success( void )
     publishInfo.qos = MQTTQoS1;
 
     MQTT_GetPacketId_ExpectAndReturn( &( mqttAgentContext.mqttContext ), 1 );
-    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 1, MQTTSuccess );
+    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 1, NULL, MQTTSuccess );
 
-    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishInfo, &returnFlags );
+    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSuccess, mqttStatus );
     /* Ensure that returnFlags are set as intended. */
@@ -237,15 +239,16 @@ void test_MQTTAgentCommand_Publish_QoS0_failure( void )
 {
     MQTTAgentContext_t mqttAgentContext = { 0 };
     MQTTPublishInfo_t publishInfo = { 0 };
+    MQTTAgentPublishArgs_t publishArgs = { .pPublishInfo = &publishInfo };
     MQTTAgentCommandFuncReturns_t returnFlags = { 0 };
     MQTTStatus_t mqttStatus;
 
     /* Initializing QOS. */
     publishInfo.qos = MQTTQoS0;
 
-    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 0, MQTTSendFailed );
+    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 0, NULL, MQTTSendFailed );
 
-    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishInfo, &returnFlags );
+    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSendFailed, mqttStatus );
     /* Ensure that returnFlags are set as intended. */
@@ -262,6 +265,7 @@ void test_MQTTAgentCommand_Publish_QoS1_failure( void )
 {
     MQTTAgentContext_t mqttAgentContext = { 0 };
     MQTTPublishInfo_t publishInfo = { 0 };
+    MQTTAgentPublishArgs_t publishArgs = { .pPublishInfo = &publishInfo };
     MQTTAgentCommandFuncReturns_t returnFlags = { 0 };
     MQTTStatus_t mqttStatus;
 
@@ -269,9 +273,9 @@ void test_MQTTAgentCommand_Publish_QoS1_failure( void )
     publishInfo.qos = MQTTQoS1;
 
     MQTT_GetPacketId_ExpectAndReturn( &( mqttAgentContext.mqttContext ), 1 );
-    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 1, MQTTSendFailed );
+    MQTT_Publish_ExpectAndReturn( &( mqttAgentContext.mqttContext ), &publishInfo, 1, NULL, MQTTSendFailed );
 
-    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishInfo, &returnFlags );
+    mqttStatus = MQTTAgentCommand_Publish( &mqttAgentContext, &publishArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSendFailed, mqttStatus );
     /* Ensure that returnFlags are set as intended. */
@@ -295,8 +299,7 @@ void test_MQTTAgentCommand_Subscribe_Success( void )
     MQTT_Subscribe_ExpectAndReturn( &( mqttAgentContext.mqttContext ),
                                     subscribeArgs.pSubscribeInfo,
                                     subscribeArgs.numSubscriptions,
-                                    1,
-                                    MQTTSuccess );
+                                    1, NULL, MQTTSuccess );
     mqttStatus = MQTTAgentCommand_Subscribe( &mqttAgentContext, &subscribeArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSuccess, mqttStatus );
@@ -321,8 +324,7 @@ void test_MQTTAgentCommand_Subscribe_failure( void )
     MQTT_Subscribe_ExpectAndReturn( &( mqttAgentContext.mqttContext ),
                                     subscribeArgs.pSubscribeInfo,
                                     subscribeArgs.numSubscriptions,
-                                    1,
-                                    MQTTSendFailed );
+                                    1, NULL, MQTTSendFailed );
     mqttStatus = MQTTAgentCommand_Subscribe( &mqttAgentContext, &subscribeArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSendFailed, mqttStatus );
@@ -347,8 +349,7 @@ void test_MQTTAgentCommand_Unsubscribe( void )
     MQTT_Unsubscribe_ExpectAndReturn( &( mqttAgentContext.mqttContext ),
                                       subscribeArgs.pSubscribeInfo,
                                       subscribeArgs.numSubscriptions,
-                                      1,
-                                      MQTTSuccess );
+                                      1, NULL, MQTTSuccess );
     mqttStatus = MQTTAgentCommand_Unsubscribe( &mqttAgentContext, &subscribeArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSuccess, mqttStatus );
@@ -373,8 +374,7 @@ void test_MQTTAgentCommand_Unsubscribe_failure( void )
     MQTT_Unsubscribe_ExpectAndReturn( &( mqttAgentContext.mqttContext ),
                                       subscribeArgs.pSubscribeInfo,
                                       subscribeArgs.numSubscriptions,
-                                      1,
-                                      MQTTSendFailed );
+                                      1, NULL, MQTTSendFailed );
     mqttStatus = MQTTAgentCommand_Unsubscribe( &mqttAgentContext, &subscribeArgs, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSendFailed, mqttStatus );
@@ -394,7 +394,7 @@ void test_MQTTAgentCommand_Disconnect( void )
     MQTTAgentCommandFuncReturns_t returnFlags = { 0 };
     MQTTStatus_t mqttStatus;
 
-    MQTT_Disconnect_ExpectAndReturn( &( mqttAgentContext.mqttContext ), MQTTSuccess );
+    MQTT_Disconnect_ExpectAndReturn( &( mqttAgentContext.mqttContext ), NULL, NULL, MQTTSuccess );
     mqttStatus = MQTTAgentCommand_Disconnect( &mqttAgentContext, NULL, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSuccess, mqttStatus );
@@ -414,7 +414,7 @@ void test_MQTTAgentCommand_Disconnect_failure( void )
     MQTTAgentCommandFuncReturns_t returnFlags = { 0 };
     MQTTStatus_t mqttStatus;
 
-    MQTT_Disconnect_ExpectAndReturn( &( mqttAgentContext.mqttContext ), MQTTSendFailed );
+    MQTT_Disconnect_ExpectAndReturn( &( mqttAgentContext.mqttContext ), NULL, NULL, MQTTSendFailed );
     mqttStatus = MQTTAgentCommand_Disconnect( &mqttAgentContext, NULL, &returnFlags );
 
     TEST_ASSERT_EQUAL( MQTTSendFailed, mqttStatus );

@@ -146,7 +146,10 @@ MQTTStatus_t MQTT_ProcessLoop( MQTTContext_t * pContext )
         /* Invoke event callback. */
         pContext->appCallback( pContext,
                                pPacketInfo,
-                               pDeserializedInfo );
+                               pDeserializedInfo,
+                               NULL,
+                               NULL,
+                               NULL );
 
         terminate = true;
     }

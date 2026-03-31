@@ -116,7 +116,9 @@ MQTTAgentContext_t * allocateMqttAgentContext( MQTTAgentContext_t * pContext )
                                  pTransportInterface,
                                  GetCurrentTimeStub,
                                  IncomingPublishCallbackStub,
-                                 pIncomingCallbackContext );
+                                 pIncomingCallbackContext,
+                                 NULL,
+                                 0U );
     }
 
     /* If the MQTTAgentContext_t initialization failed, then set the context to NULL
@@ -190,10 +192,16 @@ void addPendingAcks( MQTTAgentContext_t * pContext )
 
         pCommand->commandType = MQTT_PACKET_TYPE_PUBLISH;
 
-        /* Add Publish Info. */
+        /* Add Publish Args with Publish Info. */
         pPublishInfo = malloc( sizeof( MQTTPublishInfo_t ) );
         __CPROVER_assume( pPublishInfo != NULL );
-        pCommand->pArgs = pPublishInfo;
+        {
+            MQTTAgentPublishArgs_t * pPublishArgs = malloc( sizeof( MQTTAgentPublishArgs_t ) );
+            __CPROVER_assume( pPublishArgs != NULL );
+            pPublishArgs->pPublishInfo = pPublishInfo;
+            pPublishArgs->pProperties = NULL;
+            pCommand->pArgs = pPublishArgs;
+        }
 
         pCommand->pCommandCompleteCallback = commandCompleteCallbackStub;
 

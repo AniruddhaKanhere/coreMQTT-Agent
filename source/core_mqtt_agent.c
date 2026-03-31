@@ -144,10 +144,16 @@ static MQTTStatus_t processCommand( MQTTAgentContext_t * pMqttAgentContext,
  * @param[in] pPacketInfo Pointer to incoming packet.
  * @param[in] pDeserializedInfo Pointer to deserialized information from
  * the incoming packet.
+ * @param[out] pReasonCode Pointer to reason code for outgoing ACK responses.
+ * @param[out] pSendPropsBuffer Pointer to property builder for outgoing response.
+ * @param[in] pGetPropsBuffer Pointer to property builder for incoming packet properties.
  */
-static void mqttEventCallback( MQTTContext_t * pMqttContext,
+static bool mqttEventCallback( MQTTContext_t * pMqttContext,
                                MQTTPacketInfo_t * pPacketInfo,
-                               MQTTDeserializedInfo_t * pDeserializedInfo );
+                               MQTTDeserializedInfo_t * pDeserializedInfo,
+                               MQTTSuccessFailReasonCode_t * pReasonCode,
+                               MQTTPropBuilder_t * pSendPropsBuffer,
+                               MQTTPropBuilder_t * pGetPropsBuffer );
 
 /**
  * @brief Mark a command as complete after receiving an acknowledgment packet.
@@ -426,9 +432,7 @@ static MQTTStatus_t createCommand( MQTTAgentCommandType_t commandType,
 {
     bool isValid, isSpace = true;
     MQTTStatus_t statusReturn;
-    const MQTTPublishInfo_t * pPublishInfo;
-    size_t uxHeaderBytes;
-    const size_t uxControlAndLengthBytes = ( size_t ) 4; /* Control, remaining length and length bytes. */
+    const MQTTAgentPublishArgs_t * pPublishArgs = NULL;
 
     assert( pMqttAgentContext != NULL );
     assert( pCommand != NULL );
@@ -452,26 +456,20 @@ static MQTTStatus_t createCommand( MQTTAgentCommandType_t commandType,
             break;
 
         case PUBLISH:
-            pPublishInfo = ( const MQTTPublishInfo_t * ) pMqttInfoParam;
-
-            /* Calculate the space consumed by everything other than the
-             * payload. */
-            uxHeaderBytes = uxControlAndLengthBytes;
-            uxHeaderBytes += pPublishInfo->topicNameLength;
+            assert( pMqttInfoParam != NULL );
+            pPublishArgs = ( const MQTTAgentPublishArgs_t * ) pMqttInfoParam;
 
             /* This message type results in the broker returning an ACK. The
              * agent maintains an array of outstanding ACK messages.  See if
              * the array contains space for another outstanding ack.  QoS0
              * publish does not result in an ack so it doesn't matter if
              * there is no space in the ACK array. */
-            if( pPublishInfo->qos != MQTTQoS0 )
+            if( pPublishArgs->pPublishInfo->qos != MQTTQoS0 )
             {
                 isSpace = isSpaceInPendingAckList( pMqttAgentContext );
             }
 
-            /* Will the message fit in the defined buffer? */
-            isValid = ( uxHeaderBytes < pMqttAgentContext->mqttContext.networkBuffer.size ) &&
-                      ( isSpace == true );
+            isValid = isSpace;
 
             break;
 
@@ -650,14 +648,21 @@ static MQTTAgentContext_t * getAgentFromMQTTContext( MQTTContext_t * pMQTTContex
 
 /*-----------------------------------------------------------*/
 
-static void mqttEventCallback( MQTTContext_t * pMqttContext,
+static bool mqttEventCallback( MQTTContext_t * pMqttContext,
                                MQTTPacketInfo_t * pPacketInfo,
-                               MQTTDeserializedInfo_t * pDeserializedInfo )
+                               MQTTDeserializedInfo_t * pDeserializedInfo,
+                               MQTTSuccessFailReasonCode_t * pReasonCode,
+                               MQTTPropBuilder_t * pSendPropsBuffer,
+                               MQTTPropBuilder_t * pGetPropsBuffer )
 {
     MQTTAgentAckInfo_t * pAckInfo;
     uint16_t packetIdentifier = pDeserializedInfo->packetIdentifier;
     MQTTAgentContext_t * pAgentContext;
     const uint8_t upperNibble = ( uint8_t ) 0xF0;
+
+    ( void ) pReasonCode;
+    ( void ) pSendPropsBuffer;
+    ( void ) pGetPropsBuffer;
 
     assert( pMqttContext != NULL );
     assert( pPacketInfo != NULL );
@@ -716,6 +721,8 @@ static void mqttEventCallback( MQTTContext_t * pMqttContext,
                 break;
         }
     }
+
+    return true;
 }
 
 /*-----------------------------------------------------------*/
@@ -819,7 +826,7 @@ static MQTTStatus_t resendPublishes( MQTTAgentContext_t * pMqttAgentContext )
     MQTTStateCursor_t cursor = MQTT_STATE_CURSOR_INITIALIZER;
     uint16_t packetId = MQTT_PACKET_ID_INVALID;
     MQTTAgentAckInfo_t * pFoundAck = NULL;
-    MQTTPublishInfo_t * pOriginalPublish = NULL;
+    MQTTAgentPublishArgs_t * pOriginalPublish = NULL;
     MQTTContext_t * pMqttContext;
 
     assert( pMqttAgentContext != NULL );
@@ -835,9 +842,9 @@ static MQTTStatus_t resendPublishes( MQTTAgentContext_t * pMqttAgentContext )
         if( pFoundAck != NULL )
         {
             /* Set the DUP flag. */
-            pOriginalPublish = ( MQTTPublishInfo_t * ) ( pFoundAck->pOriginalCommand->pArgs );
-            pOriginalPublish->dup = true;
-            statusResult = MQTT_Publish( pMqttContext, pOriginalPublish, packetId );
+            pOriginalPublish = ( MQTTAgentPublishArgs_t * ) ( pFoundAck->pOriginalCommand->pArgs );
+            pOriginalPublish->pPublishInfo->dup = true;
+            statusResult = MQTT_Publish( pMqttContext, pOriginalPublish->pPublishInfo, packetId, pOriginalPublish->pProperties );
 
             if( statusResult != MQTTSuccess )
             {
@@ -932,6 +939,7 @@ static bool validateParams( MQTTAgentCommandType_t commandType,
     bool ret = false;
     const MQTTAgentConnectArgs_t * pConnectArgs = NULL;
     const MQTTAgentSubscribeArgs_t * pSubscribeArgs = NULL;
+    const MQTTAgentPublishArgs_t * pPublishArgs = NULL;
 
     assert( ( commandType == CONNECT ) || ( commandType == PUBLISH ) ||
             ( commandType == SUBSCRIBE ) || ( commandType == UNSUBSCRIBE ) );
@@ -941,7 +949,8 @@ static bool validateParams( MQTTAgentCommandType_t commandType,
         case CONNECT:
             pConnectArgs = ( const MQTTAgentConnectArgs_t * ) pParams;
             ret = ( ( pConnectArgs != NULL ) &&
-                    ( pConnectArgs->pConnectInfo != NULL ) );
+                    ( pConnectArgs->pConnectInfo != NULL ) &&
+                    ( ( pConnectArgs->pWillInfo != NULL ) || ( pConnectArgs->pWillProperties == NULL ) ) );
             break;
 
         case SUBSCRIBE:
@@ -952,8 +961,13 @@ static bool validateParams( MQTTAgentCommandType_t commandType,
                     ( pSubscribeArgs->numSubscriptions != 0U ) );
             break;
 
+        case PUBLISH:
+            pPublishArgs = ( const MQTTAgentPublishArgs_t * ) pParams;
+            ret = ( ( pPublishArgs != NULL ) &&
+                    ( pPublishArgs->pPublishInfo != NULL ) );
+            break;
+
         default:
-            /* Publish, does not need to be cast since we do not check it. */
             ret = ( pParams != NULL );
             break;
     }
@@ -969,7 +983,9 @@ MQTTStatus_t MQTTAgent_Init( MQTTAgentContext_t * pMqttAgentContext,
                              const TransportInterface_t * pTransportInterface,
                              MQTTGetCurrentTimeFunc_t getCurrentTimeMs,
                              MQTTAgentIncomingPublishCallback_t incomingCallback,
-                             void * pIncomingPacketContext )
+                             void * pIncomingPacketContext,
+                             uint8_t * pAckPropsBuffer,
+                             size_t ackPropsBufferSize )
 {
     MQTTStatus_t returnStatus;
 
@@ -1008,7 +1024,9 @@ MQTTStatus_t MQTTAgent_Init( MQTTAgentContext_t * pMqttAgentContext,
                                                      pMqttAgentContext->pOutgoingPublishRecords,
                                                      MQTT_AGENT_MAX_OUTSTANDING_ACKS,
                                                      pMqttAgentContext->pIncomingPublishRecords,
-                                                     MQTT_AGENT_MAX_OUTSTANDING_ACKS );
+                                                     MQTT_AGENT_MAX_OUTSTANDING_ACKS,
+                                                     pAckPropsBuffer,
+                                                     ackPropsBufferSize );
             }
         }
         #endif /* if ( MQTT_AGENT_USE_QOS_1_2_PUBLISH != 0 ) */
@@ -1211,20 +1229,20 @@ MQTTStatus_t MQTTAgent_Unsubscribe( const MQTTAgentContext_t * pMqttAgentContext
 /*-----------------------------------------------------------*/
 
 MQTTStatus_t MQTTAgent_Publish( const MQTTAgentContext_t * pMqttAgentContext,
-                                MQTTPublishInfo_t * pPublishInfo,
+                                MQTTAgentPublishArgs_t * pPublishArgs,
                                 const MQTTAgentCommandInfo_t * pCommandInfo )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
     bool paramsValid = false;
 
     paramsValid = validateStruct( pMqttAgentContext, pCommandInfo ) &&
-                  validateParams( PUBLISH, pPublishInfo );
+                  validateParams( PUBLISH, pPublishArgs );
 
     if( paramsValid )
     {
         statusReturn = createAndAddCommand( PUBLISH,                                   /* commandType */
                                             pMqttAgentContext,                         /* mqttContextHandle */
-                                            pPublishInfo,                              /* pMqttInfoParam */
+                                            pPublishArgs,                              /* pMqttInfoParam */
                                             pCommandInfo->cmdCompleteCallback,         /* commandCompleteCallback */
                                             pCommandInfo->pCmdCompleteCallbackContext, /* pCommandCompleteCallbackContext */
                                             pCommandInfo->blockTimeMs );
@@ -1284,6 +1302,7 @@ MQTTStatus_t MQTTAgent_Connect( const MQTTAgentContext_t * pMqttAgentContext,
 /*-----------------------------------------------------------*/
 
 MQTTStatus_t MQTTAgent_Disconnect( const MQTTAgentContext_t * pMqttAgentContext,
+                                   MQTTAgentDisconnectArgs_t * pDisconnectArgs,
                                    const MQTTAgentCommandInfo_t * pCommandInfo )
 {
     MQTTStatus_t statusReturn = MQTTBadParameter;
@@ -1295,7 +1314,7 @@ MQTTStatus_t MQTTAgent_Disconnect( const MQTTAgentContext_t * pMqttAgentContext,
     {
         statusReturn = createAndAddCommand( DISCONNECT,                                /* commandType */
                                             pMqttAgentContext,                         /* mqttContextHandle */
-                                            NULL,                                      /* pMqttInfoParam */
+                                            pDisconnectArgs,                           /* pMqttInfoParam */
                                             pCommandInfo->cmdCompleteCallback,         /* commandCompleteCallback */
                                             pCommandInfo->pCmdCompleteCallbackContext, /* pCommandCompleteCallbackContext */
                                             pCommandInfo->blockTimeMs );

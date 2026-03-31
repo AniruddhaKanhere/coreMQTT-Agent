@@ -32,14 +32,16 @@ void harness()
 {
     MQTTAgentContext_t * pMqttAgentContext;
     MQTTAgentCommandFuncReturns_t * pReturnFlags;
-    MQTTPublishInfo_t * pPublishArg;
+    MQTTAgentPublishArgs_t * pPublishArgs;
 
     pMqttAgentContext = malloc( sizeof( MQTTAgentContext_t ) );
     __CPROVER_assume( pMqttAgentContext != NULL );
     pReturnFlags = malloc( sizeof( MQTTAgentCommandFuncReturns_t ) );
     __CPROVER_assume( pReturnFlags != NULL );
-    pPublishArg = malloc( sizeof( MQTTPublishInfo_t ) );
-    __CPROVER_assume( pPublishArg != NULL );
+    pPublishArgs = malloc( sizeof( MQTTAgentPublishArgs_t ) );
+    __CPROVER_assume( pPublishArgs != NULL );
+    pPublishArgs->pPublishInfo = malloc( sizeof( MQTTPublishInfo_t ) );
+    __CPROVER_assume( pPublishArgs->pPublishInfo != NULL );
 
-    MQTTAgentCommand_Publish( pMqttAgentContext, pPublishArg, pReturnFlags );
+    MQTTAgentCommand_Publish( pMqttAgentContext, pPublishArgs, pReturnFlags );
 }
